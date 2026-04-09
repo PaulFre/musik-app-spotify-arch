@@ -2,6 +2,8 @@ import 'package:party_queue_app/src/features/party/domain/models/spotify_track.d
 
 abstract class SpotifyCatalogService {
   Future<List<SpotifyTrack>> searchTracks(String query);
+
+  Future<List<SpotifyTrack>> loadSuggestions();
 }
 
 class FakeSpotifyCatalogService implements SpotifyCatalogService {
@@ -51,5 +53,10 @@ class FakeSpotifyCatalogService implements SpotifyCatalogService {
               track.artist.toLowerCase().contains(normalized),
         )
         .toList();
+  }
+
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return _catalog.take(3).toList();
   }
 }

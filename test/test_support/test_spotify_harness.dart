@@ -74,4 +74,9 @@ class LargeCatalogService implements SpotifyCatalogService {
         )
         .toList();
   }
+
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return _catalog.take(3).toList();
+  }
 }

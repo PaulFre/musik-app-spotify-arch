@@ -7,6 +7,14 @@ import 'package:party_queue_app/src/features/spotify/domain/spotify_auth_service
 import 'package:party_queue_app/src/features/spotify/domain/spotify_catalog_service.dart';
 
 class SpotifyWebCatalogService implements SpotifyCatalogService {
+  static const List<String> _suggestionSeeds = <String>[
+    'Mr. Brightside',
+    'Blinding Lights',
+    'Bohemian Rhapsody',
+    'Save Your Tears',
+    'bad guy',
+  ];
+
   SpotifyWebCatalogService({
     required SpotifyAppConfig config,
     required SpotifyAuthService authService,
@@ -58,6 +66,27 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
         .map(_toSpotifyTrack)
         .whereType<SpotifyTrack>()
         .toList();
+  }
+
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    final suggestions = <SpotifyTrack>[];
+    final seenTrackIds = <String>{};
+
+    for (final seed in _suggestionSeeds) {
+      final results = await searchTracks(seed);
+      for (final track in results) {
+        if (seenTrackIds.add(track.id)) {
+          suggestions.add(track);
+          break;
+        }
+      }
+      if (suggestions.length == 3) {
+        break;
+      }
+    }
+
+    return suggestions.take(3).toList();
   }
 
   SpotifyTrack? _toSpotifyTrack(Map<String, dynamic> json) {

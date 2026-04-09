@@ -140,6 +140,10 @@ class PartyRoomController extends ChangeNotifier {
     return _catalogService.searchTracks(query);
   }
 
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return _catalogService.loadSuggestions();
+  }
+
   Future<void> addTrack(SpotifyTrack track) async {
     final room = _currentRoomSnapshot();
     final userId = _activeUserId;

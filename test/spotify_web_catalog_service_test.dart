@@ -127,6 +127,77 @@ void main() {
 
     expect(await service.searchTracks('   '), isEmpty);
   });
+
+  test('loadSuggestions returns exactly three resolved Spotify tracks', () async {
+    final queries = <String>[];
+    final service = SpotifyWebCatalogService(
+      config: config,
+      authService: StaticTokenAuthService(),
+      httpClient: MockClient((request) async {
+        queries.add(request.url.queryParameters['q']!);
+        final query = request.url.queryParameters['q']!;
+        return http.Response(
+          jsonEncode(<String, Object>{
+            'tracks': <String, Object>{
+              'items': <Map<String, Object>>[
+                <String, Object>{
+                  'id': 'id-$query',
+                  'uri': 'spotify:track:id-$query',
+                  'name': query,
+                  'artists': <Map<String, Object>>[
+                    <String, Object>{'name': 'Artist $query'},
+                  ],
+                },
+              ],
+            },
+          }),
+          200,
+        );
+      }),
+    );
+
+    final suggestions = await service.loadSuggestions();
+
+    expect(suggestions, hasLength(3));
+    expect(suggestions.every((track) => track.uri != null && track.uri!.isNotEmpty), isTrue);
+    expect(suggestions.map((track) => track.id).toSet().length, 3);
+    expect(queries, hasLength(3));
+  });
+
+  test('loadSuggestions skips duplicates and keeps filling to three', () async {
+    final service = SpotifyWebCatalogService(
+      config: config,
+      authService: StaticTokenAuthService(),
+      httpClient: MockClient((request) async {
+        final query = request.url.queryParameters['q']!;
+        final duplicate = query == 'Mr. Brightside' || query == 'Blinding Lights';
+        return http.Response(
+          jsonEncode(<String, Object>{
+            'tracks': <String, Object>{
+              'items': <Map<String, Object>>[
+                <String, Object>{
+                  'id': duplicate ? 'duplicate-track' : 'id-$query',
+                  'uri': duplicate
+                      ? 'spotify:track:duplicate-track'
+                      : 'spotify:track:id-$query',
+                  'name': query,
+                  'artists': <Map<String, Object>>[
+                    <String, Object>{'name': 'Artist $query'},
+                  ],
+                },
+              ],
+            },
+          }),
+          200,
+        );
+      }),
+    );
+
+    final suggestions = await service.loadSuggestions();
+
+    expect(suggestions, hasLength(3));
+    expect(suggestions.map((track) => track.id).toSet().length, 3);
+  });
 }
 
 class StaticTokenAuthService implements SpotifyAuthService {

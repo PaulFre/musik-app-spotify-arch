@@ -22,12 +22,34 @@ class _RoomScreenState extends State<RoomScreen> {
   bool _isSearching = false;
   String? _searchError;
   List<SpotifyTrack> _searchResults = const <SpotifyTrack>[];
+  List<SpotifyTrack> _suggestions = const <SpotifyTrack>[];
+  bool _isLoadingSuggestions = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadSuggestions());
+  }
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSuggestions() async {
+    setState(() {
+      _isLoadingSuggestions = true;
+    });
+    final suggestions = await widget.controller.loadSuggestions();
+    if (!mounted || _query.trim().isNotEmpty) {
+      return;
+    }
+    setState(() {
+      _isLoadingSuggestions = false;
+      _suggestions = suggestions.take(3).toList();
+    });
   }
 
   Future<void> _performSearch(String rawQuery) async {
@@ -39,12 +61,14 @@ class _RoomScreenState extends State<RoomScreen> {
         _searchError = null;
         _searchResults = const <SpotifyTrack>[];
       });
+      unawaited(_loadSuggestions());
       return;
     }
     setState(() {
       _query = rawQuery;
       _isSearching = true;
       _searchError = null;
+      _suggestions = const <SpotifyTrack>[];
     });
 
     final tracks = await widget.controller.search(query);
@@ -81,6 +105,7 @@ class _RoomScreenState extends State<RoomScreen> {
       _searchError = null;
       _searchResults = const <SpotifyTrack>[];
     });
+    await _loadSuggestions();
   }
 
   @override
@@ -171,8 +196,43 @@ class _RoomScreenState extends State<RoomScreen> {
               ),
               const SizedBox(height: 8),
               if (_query.trim().isEmpty)
-                const Text(
-                  'Tippe einen Song oder Artist ein. Addbar sind nur echte Spotify-Treffer.',
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Tippe einen Song oder Artist ein. Addbar sind nur echte Spotify-Treffer.',
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Vorschlaege',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_isLoadingSuggestions)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    else if (_suggestions.isEmpty)
+                      const Text('Keine Spotify-Vorschlaege verfuegbar.')
+                    else
+                      ..._suggestions.map(
+                        (track) => Card(
+                          child: ListTile(
+                            title: Text(track.title),
+                            subtitle: Text(track.artist),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.add),
+                              onPressed: () => _addSearchResult(track),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 )
               else if (_searchError != null)
                 Text(
