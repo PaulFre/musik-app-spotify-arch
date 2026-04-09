@@ -74,8 +74,7 @@ class PartyRoom {
       cooldownByTrackId:
           cooldownByTrackId ??
           Map<String, DateTime>.from(this.cooldownByTrackId),
-      desiredNowPlayingTrackId:
-          desiredNowPlayingTrackId == _unset
+      desiredNowPlayingTrackId: desiredNowPlayingTrackId == _unset
           ? this.desiredNowPlayingTrackId
           : desiredNowPlayingTrackId as String?,
       playbackIntent: playbackIntent ?? this.playbackIntent,

@@ -23,8 +23,7 @@ class SpotifyPkceAuthService implements SpotifyAuthService {
     bool? isWeb,
   }) : _config = config,
        _httpClient = httpClient ?? http.Client(),
-       _preferencesLoader =
-           preferencesLoader ?? SharedPreferences.getInstance,
+       _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance,
        _currentUri = currentUri ?? browser.getCurrentUri,
        _redirectTo = redirectTo ?? browser.redirectTo,
        _replaceCurrentUrl = replaceCurrentUrl ?? browser.replaceCurrentUrl,
@@ -145,7 +144,9 @@ class SpotifyPkceAuthService implements SpotifyAuthService {
       await prefs.remove(_stateKey);
       await prefs.remove(_verifierKey);
       _replaceCurrentUrl(_cleanUri(uri));
-      return SpotifyConnectionState(errorMessage: 'Spotify Auth Fehler: $error');
+      return SpotifyConnectionState(
+        errorMessage: 'Spotify Auth Fehler: $error',
+      );
     }
 
     final expectedState = prefs.getString(_stateKey);
@@ -195,8 +196,7 @@ class SpotifyPkceAuthService implements SpotifyAuthService {
     await prefs.remove(_stateKey);
     await prefs.remove(_verifierKey);
     _replaceCurrentUrl(_cleanUri(uri));
-    return SpotifyConnectionState(
-      spotifyConnected: true,
+    return _fetchConnectionProfile(
       grantedScopes: grantedScopes,
       accessTokenExpiresAt: expiresAt,
     );
@@ -209,12 +209,60 @@ class SpotifyPkceAuthService implements SpotifyAuthService {
       return const SpotifyConnectionState();
     }
     final expiresAtMillis = prefs.getInt(_expiresAtKey);
-    return SpotifyConnectionState(
-      spotifyConnected: true,
+    return _fetchConnectionProfile(
       grantedScopes: _parseScopes(prefs.getString(_scopeKey)),
       accessTokenExpiresAt: expiresAtMillis == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(expiresAtMillis),
+    );
+  }
+
+  Future<SpotifyConnectionState> _fetchConnectionProfile({
+    required List<String> grantedScopes,
+    required DateTime? accessTokenExpiresAt,
+  }) async {
+    final accessToken = await getValidAccessToken();
+    if (accessToken == null) {
+      return const SpotifyConnectionState(
+        errorCode: 'spotify-token-missing',
+        errorMessage: 'Spotify-Session konnte nicht wiederhergestellt werden.',
+      );
+    }
+
+    final response = await _httpClient.get(
+      Uri.parse('${_config.apiBaseUrl}/me'),
+      headers: <String, String>{'Authorization': 'Bearer $accessToken'},
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return SpotifyConnectionState(
+        grantedScopes: grantedScopes,
+        accessTokenExpiresAt: accessTokenExpiresAt,
+        errorCode: 'spotify-profile-load-failed',
+        errorMessage:
+            'Spotify-Profil konnte nicht geladen werden (${response.statusCode}).',
+      );
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final product = (payload['product'] as String?)?.trim().toLowerCase();
+    final displayName =
+        (payload['display_name'] as String?)?.trim().isNotEmpty == true
+        ? (payload['display_name'] as String).trim()
+        : null;
+    final userId = (payload['id'] as String?)?.trim();
+    final isPremium = product == 'premium';
+    return SpotifyConnectionState(
+      spotifyConnected: true,
+      spotifyUserId: userId == null || userId.isEmpty ? null : userId,
+      displayName: displayName,
+      accountProduct: product,
+      premiumConfirmed: isPremium,
+      grantedScopes: grantedScopes,
+      accessTokenExpiresAt: accessTokenExpiresAt,
+      errorCode: isPremium ? null : 'spotify-premium-required',
+      errorMessage: isPremium
+          ? null
+          : 'Spotify Premium ist fuer den Host erforderlich.',
     );
   }
 

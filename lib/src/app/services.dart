@@ -3,6 +3,7 @@ import 'package:party_queue_app/src/features/spotify/application/playback_orches
 import 'package:party_queue_app/src/features/spotify/application/spotify_connection_controller.dart';
 import 'package:party_queue_app/src/features/spotify/data/spotify_app_config.dart';
 import 'package:party_queue_app/src/features/spotify/data/spotify_pkce_auth_service.dart';
+import 'package:party_queue_app/src/features/spotify/data/spotify_web_playback_service.dart';
 import 'package:party_queue_app/src/features/spotify/domain/spotify_auth_service.dart';
 import 'package:party_queue_app/src/features/spotify/domain/spotify_catalog_service.dart';
 import 'package:party_queue_app/src/features/spotify/domain/spotify_playback_service.dart';
@@ -20,7 +21,10 @@ class Services {
   static final SpotifyCatalogService spotifyCatalogService =
       FakeSpotifyCatalogService();
   static final SpotifyPlaybackService spotifyPlaybackService =
-      FakeSpotifyPlaybackService();
+      SpotifyWebPlaybackService(
+        config: spotifyAppConfig,
+        authService: spotifyAuthService,
+      );
   static final SpotifyConnectionController spotifyConnectionController =
       SpotifyConnectionController(
         authService: spotifyAuthService,

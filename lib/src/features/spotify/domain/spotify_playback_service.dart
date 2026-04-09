@@ -4,7 +4,7 @@ import 'package:party_queue_app/src/features/spotify/domain/models/spotify_devic
 import 'package:party_queue_app/src/features/spotify/domain/models/spotify_playback_state.dart';
 
 abstract class SpotifyPlaybackService {
-  Future<List<SpotifyDevice>> loadAvailableDevices();
+  Future<SpotifyPlaybackState> loadAvailableDevices();
 
   Future<SpotifyPlaybackState> selectDevice(String deviceId);
 
@@ -38,13 +38,15 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
   );
 
   @override
-  Future<List<SpotifyDevice>> loadAvailableDevices() async {
+  Future<SpotifyPlaybackState> loadAvailableDevices() async {
     _state = _state.copyWith(
       availableDevices: _devices,
+      selectedDeviceId: null,
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
-    return _state.availableDevices;
+    return _state;
   }
 
   @override
@@ -54,6 +56,7 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
           .map((device) => device.copyWith(isActive: device.id == deviceId))
           .toList(),
       selectedDeviceId: deviceId,
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -72,6 +75,7 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
       actualNowPlayingTrackId: track.id,
       actualIsPaused: false,
       lastCommand: 'play',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -92,6 +96,7 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualIsPaused: true,
       lastCommand: 'pause',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -103,7 +108,11 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
 
   @override
   Future<SpotifyPlaybackState> refreshPlaybackState() async {
-    _state = _state.copyWith(lastSyncedAt: DateTime.now());
+    _state = _state.copyWith(
+      playbackErrorCode: null,
+      lastSyncedAt: DateTime.now(),
+      playbackError: null,
+    );
     return _state;
   }
 
@@ -118,6 +127,7 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualIsPaused: false,
       lastCommand: 'resume',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -138,6 +148,7 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualIsPaused: false,
       lastCommand: 'skip',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );

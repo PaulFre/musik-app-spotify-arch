@@ -158,10 +158,7 @@ void main() {
       expect(host.room!.playbackIntent.isNone, isTrue);
       expect(host.room!.desiredNowPlayingTrackId, isNull);
 
-      await guest.vote(
-        trackId: results.first.id,
-        voteType: VoteType.dislike,
-      );
+      await guest.vote(trackId: results.first.id, voteType: VoteType.dislike);
       expect(host.room!.queue.first.score, -1);
       expect(host.room!.queue.first.voteOf('guest-1'), VoteType.dislike);
       expect(host.room!.playbackIntent.isNone, isTrue);
@@ -269,103 +266,120 @@ void main() {
     },
   );
 
-  test('host pause, resume and skip are confirmed through the same loop', () async {
-    final harness = await TestSpotifyHarness.ready(
-      catalogService: FakeSpotifyCatalogService(),
-    );
-    final controller = PartyRoomController(
-      repository: InMemoryPartyRoomRepository(),
-      catalogService: harness.catalogService,
-      playbackOrchestrator: harness.playbackOrchestrator,
-      spotifyConnectionController: harness.connectionController,
-    );
+  test(
+    'host pause, resume and skip are confirmed through the same loop',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
 
-    await controller.createRoom(
-      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
-      settings: const RoomSettings(cooldownMinutes: 15),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(cooldownMinutes: 15),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final tracks = await controller.search('');
-    await controller.addTrack(tracks[0]);
-    await controller.addTrack(tracks[1]);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      final tracks = await controller.search('');
+      await controller.addTrack(tracks[0]);
+      await controller.addTrack(tracks[1]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    await controller.playTopSong();
-    await Future<void>.delayed(const Duration(milliseconds: 80));
-    expect(controller.room!.nowPlayingTrackId, tracks[0].id);
-    expect(controller.room!.queue.any((item) => item.track.id == tracks[1].id), isTrue);
+      await controller.playTopSong();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(controller.room!.nowPlayingTrackId, tracks[0].id);
+      expect(
+        controller.room!.queue.any((item) => item.track.id == tracks[1].id),
+        isTrue,
+      );
 
-    await controller.pauseOrResume();
-    await Future<void>.delayed(const Duration(milliseconds: 80));
-    expect(controller.room!.playbackIntent.isNone, isTrue);
-    expect(controller.room!.isPaused, isTrue);
-    expect(controller.room!.nowPlayingTrackId, tracks[0].id);
+      await controller.pauseOrResume();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.isPaused, isTrue);
+      expect(controller.room!.nowPlayingTrackId, tracks[0].id);
 
-    await controller.pauseOrResume();
-    await Future<void>.delayed(const Duration(milliseconds: 80));
-    expect(controller.room!.playbackIntent.isNone, isTrue);
-    expect(controller.room!.isPaused, isFalse);
-    expect(controller.room!.nowPlayingTrackId, tracks[0].id);
+      await controller.pauseOrResume();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.isPaused, isFalse);
+      expect(controller.room!.nowPlayingTrackId, tracks[0].id);
 
-    await controller.skipNowPlaying();
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    expect(controller.room!.playbackIntent.isNone, isTrue);
-    expect(controller.room!.nowPlayingTrackId, tracks[1].id);
-    expect(controller.room!.nowPlayingTrack!.title, tracks[1].title);
-    expect(
-      controller.room!.queue.any((item) => item.track.id == tracks[1].id),
-      isFalse,
-    );
-    expect(controller.room!.playbackErrorMessage, isNull);
+      await controller.skipNowPlaying();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.nowPlayingTrackId, tracks[1].id);
+      expect(controller.room!.nowPlayingTrack!.title, tracks[1].title);
+      expect(
+        controller.room!.queue.any((item) => item.track.id == tracks[1].id),
+        isFalse,
+      );
+      expect(controller.room!.playbackErrorMessage, isNull);
 
-    controller.dispose();
-    harness.dispose();
-  });
+      controller.dispose();
+      harness.dispose();
+    },
+  );
 
-  test('failed play intent is cleared and writes playback error into room', () async {
-    final connectionController = SpotifyConnectionController(
-      authService: FakeSpotifyAuthService(),
-      playbackService: FakeSpotifyPlaybackService(),
-    );
-    final orchestrator = PlaybackOrchestrator(
-      connectionController: connectionController,
-    );
-    final controller = PartyRoomController(
-      repository: InMemoryPartyRoomRepository(),
-      catalogService: FakeSpotifyCatalogService(),
-      playbackOrchestrator: orchestrator,
-      spotifyConnectionController: connectionController,
-    );
+  test(
+    'failed play intent is cleared and writes playback error into room',
+    () async {
+      final connectionController = SpotifyConnectionController(
+        authService: FakeSpotifyAuthService(),
+        playbackService: FakeSpotifyPlaybackService(),
+      );
+      final orchestrator = PlaybackOrchestrator(
+        connectionController: connectionController,
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: FakeSpotifyCatalogService(),
+        playbackOrchestrator: orchestrator,
+        spotifyConnectionController: connectionController,
+      );
 
-    await controller.createRoom(
-      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
-      settings: const RoomSettings(cooldownMinutes: 15),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(cooldownMinutes: 15),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final tracks = await controller.search('');
-    await controller.addTrack(tracks.first);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      final tracks = await controller.search('');
+      await controller.addTrack(tracks.first);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    await controller.playTopSong();
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+      await controller.playTopSong();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
 
-    expect(controller.room!.playbackIntent.isNone, isTrue);
-    expect(controller.room!.nowPlayingTrackId, isNull);
-    expect(
-      controller.room!.playbackErrorMessage,
-      'Spotify ist nicht verbunden.',
-    );
-    expect(
-      controller.room!.queue.any((item) => item.track.id == tracks.first.id),
-      isTrue,
-    );
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.nowPlayingTrackId, isNull);
+      expect(
+        controller.room!.playbackErrorMessage,
+        'Spotify ist nicht verbunden.',
+      );
+      expect(
+        controller.room!.queue.any((item) => item.track.id == tracks.first.id),
+        isTrue,
+      );
 
-    controller.dispose();
-    orchestrator.dispose();
-    connectionController.dispose();
-  });
+      controller.dispose();
+      orchestrator.dispose();
+      connectionController.dispose();
+    },
+  );
 
   test('prevents queue spam by limiting queued songs per user', () async {
     final harness = await TestSpotifyHarness.ready(
@@ -523,79 +537,92 @@ void main() {
     connectionController.dispose();
   });
 
-  test('controller host actions stage intents before processor confirmation', () async {
-    final playbackService = SlowFakeSpotifyPlaybackService(
-      playDelay: const Duration(milliseconds: 90),
-      pauseDelay: const Duration(milliseconds: 90),
-      resumeDelay: const Duration(milliseconds: 90),
-      skipDelay: const Duration(milliseconds: 90),
-    );
-    final connectionController = SpotifyConnectionController(
-      authService: FakeSpotifyAuthService(),
-      playbackService: playbackService,
-    );
-    final orchestrator = PlaybackOrchestrator(
-      connectionController: connectionController,
-    );
-    await connectionController.connectHost();
-    await connectionController.selectDevice('device-speaker');
+  test(
+    'controller host actions stage intents before processor confirmation',
+    () async {
+      final playbackService = SlowFakeSpotifyPlaybackService(
+        playDelay: const Duration(milliseconds: 90),
+        pauseDelay: const Duration(milliseconds: 90),
+        resumeDelay: const Duration(milliseconds: 90),
+        skipDelay: const Duration(milliseconds: 90),
+      );
+      final connectionController = SpotifyConnectionController(
+        authService: FakeSpotifyAuthService(),
+        playbackService: playbackService,
+      );
+      final orchestrator = PlaybackOrchestrator(
+        connectionController: connectionController,
+      );
+      await connectionController.connectHost();
+      await connectionController.selectDevice('device-speaker');
 
-    final repository = InMemoryPartyRoomRepository();
-    final controller = PartyRoomController(
-      repository: repository,
-      catalogService: FakeSpotifyCatalogService(),
-      playbackOrchestrator: orchestrator,
-      spotifyConnectionController: connectionController,
-    );
+      final repository = InMemoryPartyRoomRepository();
+      final controller = PartyRoomController(
+        repository: repository,
+        catalogService: FakeSpotifyCatalogService(),
+        playbackOrchestrator: orchestrator,
+        spotifyConnectionController: connectionController,
+      );
 
-    await controller.createRoom(
-      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
-      settings: const RoomSettings(cooldownMinutes: 15),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(cooldownMinutes: 15),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final tracks = await controller.search('');
-    await controller.addTrack(tracks[0]);
-    await controller.addTrack(tracks[1]);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      final tracks = await controller.search('');
+      await controller.addTrack(tracks[0]);
+      await controller.addTrack(tracks[1]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    await controller.playTopSong();
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    expect(controller.room!.playbackIntent.type, RoomPlaybackIntentType.playTrack);
-    expect(controller.room!.playbackIntent.trackId, tracks[0].id);
-    expect(controller.room!.nowPlayingTrackId, isNull);
-    expect(
-      controller.room!.queue.any((item) => item.track.id == tracks[0].id),
-      isTrue,
-    );
+      await controller.playTopSong();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(
+        controller.room!.playbackIntent.type,
+        RoomPlaybackIntentType.playTrack,
+      );
+      expect(controller.room!.playbackIntent.trackId, tracks[0].id);
+      expect(controller.room!.nowPlayingTrackId, isNull);
+      expect(
+        controller.room!.queue.any((item) => item.track.id == tracks[0].id),
+        isTrue,
+      );
 
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    expect(controller.room!.playbackIntent.isNone, isTrue);
-    expect(controller.room!.nowPlayingTrackId, tracks[0].id);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.nowPlayingTrackId, tracks[0].id);
 
-    await controller.pauseOrResume();
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    expect(controller.room!.playbackIntent.type, RoomPlaybackIntentType.pause);
-    expect(controller.room!.isPaused, isFalse);
+      await controller.pauseOrResume();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(
+        controller.room!.playbackIntent.type,
+        RoomPlaybackIntentType.pause,
+      );
+      expect(controller.room!.isPaused, isFalse);
 
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    expect(controller.room!.playbackIntent.isNone, isTrue);
-    expect(controller.room!.isPaused, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.isPaused, isTrue);
 
-    await controller.skipNowPlaying();
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    expect(controller.room!.playbackIntent.type, RoomPlaybackIntentType.skip);
-    expect(controller.room!.nowPlayingTrackId, tracks[0].id);
+      await controller.skipNowPlaying();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(controller.room!.playbackIntent.type, RoomPlaybackIntentType.skip);
+      expect(controller.room!.nowPlayingTrackId, tracks[0].id);
 
-    await Future<void>.delayed(const Duration(milliseconds: 220));
-    expect(controller.room!.playbackIntent.isNone, isTrue);
-    expect(controller.room!.nowPlayingTrackId, tracks[1].id);
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.nowPlayingTrackId, tracks[1].id);
 
-    controller.dispose();
-    await repository.dispose();
-    orchestrator.dispose();
-    connectionController.dispose();
-  });
+      controller.dispose();
+      await repository.dispose();
+      orchestrator.dispose();
+      connectionController.dispose();
+    },
+  );
 }
 
 class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
@@ -623,13 +650,15 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
   final Duration skipDelay;
 
   @override
-  Future<List<SpotifyDevice>> loadAvailableDevices() async {
+  Future<SpotifyPlaybackState> loadAvailableDevices() async {
     _state = _state.copyWith(
       availableDevices: _devices,
+      selectedDeviceId: null,
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
-    return _state.availableDevices;
+    return _state;
   }
 
   @override
@@ -638,6 +667,7 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualIsPaused: true,
       lastCommand: 'pause',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -654,6 +684,7 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
       actualNowPlayingTrackId: track.id,
       actualIsPaused: false,
       lastCommand: 'play',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -665,7 +696,11 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
 
   @override
   Future<SpotifyPlaybackState> refreshPlaybackState() async {
-    _state = _state.copyWith(lastSyncedAt: DateTime.now());
+    _state = _state.copyWith(
+      playbackErrorCode: null,
+      lastSyncedAt: DateTime.now(),
+      playbackError: null,
+    );
     return _state;
   }
 
@@ -675,6 +710,7 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualIsPaused: false,
       lastCommand: 'resume',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -691,6 +727,7 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
           .map((device) => device.copyWith(isActive: device.id == deviceId))
           .toList(),
       selectedDeviceId: deviceId,
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );
@@ -703,6 +740,7 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualIsPaused: false,
       lastCommand: 'skip',
+      playbackErrorCode: null,
       lastSyncedAt: DateTime.now(),
       playbackError: null,
     );

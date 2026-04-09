@@ -128,6 +128,15 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      if (playback.playbackError != null) ...[
+                        Text(
+                          playback.playbackError!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       if (playback.availableDevices.isNotEmpty)
                         DropdownButtonFormField<String>(
                           initialValue: playback.selectedDeviceId,
@@ -151,8 +160,9 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                           ),
                         )
                       else
-                        const Text(
-                          'Noch keine Geraete geladen. Raum-Erstellung bleibt erlaubt, Playback aber gesperrt.',
+                        Text(
+                          playback.playbackError ??
+                              'Noch keine Geraete geladen. Raum-Erstellung bleibt erlaubt, Playback aber gesperrt.',
                         ),
                     ],
                   ),

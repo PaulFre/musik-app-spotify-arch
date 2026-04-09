@@ -20,6 +20,7 @@ class FakeSpotifyAuthService implements SpotifyAuthService {
       spotifyConnected: true,
       spotifyUserId: 'spotify-host-1',
       displayName: 'Demo Host',
+      accountProduct: 'premium',
       premiumConfirmed: true,
       grantedScopes: <String>[
         'user-read-private',

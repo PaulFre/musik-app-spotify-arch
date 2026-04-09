@@ -322,7 +322,8 @@ class RoomPlaybackIntentProcessor {
   }
 
   bool _sameIntent(PartyRoom latestRoom, PartyRoom intentRoom) {
-    return latestRoom.playbackIntentVersion == intentRoom.playbackIntentVersion &&
+    return latestRoom.playbackIntentVersion ==
+            intentRoom.playbackIntentVersion &&
         latestRoom.playbackIntent.type == intentRoom.playbackIntent.type &&
         latestRoom.playbackIntent.trackId == intentRoom.playbackIntent.trackId;
   }
@@ -346,5 +347,4 @@ class RoomPlaybackIntentProcessor {
     }
     return null;
   }
-
 }
