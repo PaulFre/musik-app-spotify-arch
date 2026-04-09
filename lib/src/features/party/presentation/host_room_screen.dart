@@ -97,6 +97,15 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                             ? 'Verbunden als ${connection.displayName ?? 'Spotify Host'}'
                             : 'Spotify noch nicht verbunden',
                       ),
+                      if (connection.errorMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          connection.errorMessage!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,

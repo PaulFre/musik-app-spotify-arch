@@ -30,7 +30,18 @@ class SpotifyConnectionController extends ChangeNotifier {
   Future<void> connectHost() async {
     _setLoading(true);
     _connectionState = await _authService.connect();
-    await refreshDevices();
+    if (_connectionState.spotifyConnected && _connectionState.premiumConfirmed) {
+      await refreshDevices();
+    }
+    _setLoading(false);
+  }
+
+  Future<void> restoreSession() async {
+    _setLoading(true);
+    _connectionState = await _authService.restoreSession();
+    if (_connectionState.spotifyConnected && _connectionState.premiumConfirmed) {
+      await refreshDevices();
+    }
     _setLoading(false);
   }
 

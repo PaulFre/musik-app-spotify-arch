@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:party_queue_app/src/app/services.dart';
 import 'package:party_queue_app/src/features/home/presentation/home_screen.dart';
 import 'package:party_queue_app/src/features/settings/application/settings_controller.dart';
 import 'package:party_queue_app/src/features/settings/presentation/settings_scope.dart';
@@ -13,6 +14,12 @@ class PartyQueueApp extends StatefulWidget {
 
 class _PartyQueueAppState extends State<PartyQueueApp> {
   final SettingsController _settingsController = SettingsController();
+
+  @override
+  void initState() {
+    super.initState();
+    Services.spotifyConnectionController.restoreSession();
+  }
 
   @override
   void dispose() {

@@ -4,6 +4,8 @@ class SpotifyConnectionState {
     this.spotifyUserId,
     this.displayName,
     this.premiumConfirmed = false,
+    this.grantedScopes = const <String>[],
+    this.accessTokenExpiresAt,
     this.errorMessage,
   });
 
@@ -11,6 +13,8 @@ class SpotifyConnectionState {
   final String? spotifyUserId;
   final String? displayName;
   final bool premiumConfirmed;
+  final List<String> grantedScopes;
+  final DateTime? accessTokenExpiresAt;
   final String? errorMessage;
 
   SpotifyConnectionState copyWith({
@@ -18,6 +22,8 @@ class SpotifyConnectionState {
     String? spotifyUserId,
     String? displayName,
     bool? premiumConfirmed,
+    List<String>? grantedScopes,
+    DateTime? accessTokenExpiresAt,
     String? errorMessage,
   }) {
     return SpotifyConnectionState(
@@ -25,6 +31,8 @@ class SpotifyConnectionState {
       spotifyUserId: spotifyUserId ?? this.spotifyUserId,
       displayName: displayName ?? this.displayName,
       premiumConfirmed: premiumConfirmed ?? this.premiumConfirmed,
+      grantedScopes: grantedScopes ?? this.grantedScopes,
+      accessTokenExpiresAt: accessTokenExpiresAt ?? this.accessTokenExpiresAt,
       errorMessage: errorMessage,
     );
   }
