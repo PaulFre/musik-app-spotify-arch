@@ -623,6 +623,44 @@ void main() {
       connectionController.dispose();
     },
   );
+
+  test('loadSuggestions adapts to room context and excludes queued tracks', () async {
+    final catalogService = ContextAwareCatalogService();
+    final harness = await TestSpotifyHarness.ready(
+      catalogService: catalogService,
+    );
+    final controller = PartyRoomController(
+      repository: InMemoryPartyRoomRepository(),
+      catalogService: harness.catalogService,
+      playbackOrchestrator: harness.playbackOrchestrator,
+      spotifyConnectionController: harness.connectionController,
+    );
+
+    await controller.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    await controller.addTrack(
+      const SpotifyTrack(
+        id: 'queued-track',
+        uri: 'spotify:track:queued-track',
+        title: 'Window Shopper',
+        artist: '50 Cent',
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final suggestions = await controller.loadSuggestions();
+
+    expect(catalogService.searchQueries, contains('50 Cent'));
+    expect(suggestions, hasLength(3));
+    expect(suggestions.any((track) => track.id == 'queued-track'), isFalse);
+
+    controller.dispose();
+    harness.dispose();
+  });
 }
 
 class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
@@ -748,5 +786,65 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
       effectiveTrackId: _state.actualNowPlayingTrackId,
       effectiveDeviceId: _state.selectedDeviceId,
     );
+  }
+}
+
+class ContextAwareCatalogService implements SpotifyCatalogService {
+  final List<String> searchQueries = <String>[];
+
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return const <SpotifyTrack>[
+      SpotifyTrack(
+        id: 'fallback-1',
+        uri: 'spotify:track:fallback-1',
+        title: 'Fallback 1',
+        artist: 'Fallback Artist',
+      ),
+      SpotifyTrack(
+        id: 'fallback-2',
+        uri: 'spotify:track:fallback-2',
+        title: 'Fallback 2',
+        artist: 'Fallback Artist',
+      ),
+      SpotifyTrack(
+        id: 'fallback-3',
+        uri: 'spotify:track:fallback-3',
+        title: 'Fallback 3',
+        artist: 'Fallback Artist',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<SpotifyTrack>> searchTracks(String query) async {
+    searchQueries.add(query);
+    if (query == '50 Cent') {
+      return const <SpotifyTrack>[
+        SpotifyTrack(
+          id: 'queued-track',
+          uri: 'spotify:track:queued-track',
+          title: 'Window Shopper',
+          artist: '50 Cent',
+        ),
+        SpotifyTrack(
+          id: 'suggestion-1',
+          uri: 'spotify:track:suggestion-1',
+          title: 'In Da Club',
+          artist: '50 Cent',
+        ),
+      ];
+    }
+    if (query == 'Window Shopper') {
+      return const <SpotifyTrack>[
+        SpotifyTrack(
+          id: 'suggestion-2',
+          uri: 'spotify:track:suggestion-2',
+          title: 'Candy Shop',
+          artist: '50 Cent',
+        ),
+      ];
+    }
+    return const <SpotifyTrack>[];
   }
 }

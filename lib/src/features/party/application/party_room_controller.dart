@@ -141,7 +141,70 @@ class PartyRoomController extends ChangeNotifier {
   }
 
   Future<List<SpotifyTrack>> loadSuggestions() async {
-    return _catalogService.loadSuggestions();
+    final room = _currentRoomSnapshot();
+    if (room == null) {
+      return _catalogService.loadSuggestions();
+    }
+
+    final excludedTrackIds = <String>{
+      if (room.nowPlayingTrackId != null) room.nowPlayingTrackId!,
+      ...room.queue.map((item) => item.track.id),
+    };
+    final seedQueries = <String>[];
+
+    void addSeed(String? value) {
+      final normalized = value?.trim();
+      if (normalized == null || normalized.isEmpty) {
+        return;
+      }
+      if (!seedQueries.contains(normalized)) {
+        seedQueries.add(normalized);
+      }
+    }
+
+    addSeed(room.nowPlayingTrack?.artist);
+    addSeed(room.nowPlayingTrack?.title);
+    for (final item in room.queue.take(5)) {
+      addSeed(item.track.artist);
+      addSeed(item.track.title);
+    }
+
+    final suggestions = <SpotifyTrack>[];
+    final seenTrackIds = <String>{};
+    for (final seed in seedQueries) {
+      final results = await _catalogService.searchTracks(seed);
+      for (final track in results) {
+        if (excludedTrackIds.contains(track.id)) {
+          continue;
+        }
+        if (!seenTrackIds.add(track.id)) {
+          continue;
+        }
+        suggestions.add(track);
+        break;
+      }
+      if (suggestions.length == 3) {
+        return suggestions;
+      }
+    }
+
+    if (suggestions.length < 3) {
+      final fallback = await _catalogService.loadSuggestions();
+      for (final track in fallback) {
+        if (excludedTrackIds.contains(track.id)) {
+          continue;
+        }
+        if (!seenTrackIds.add(track.id)) {
+          continue;
+        }
+        suggestions.add(track);
+        if (suggestions.length == 3) {
+          break;
+        }
+      }
+    }
+
+    return suggestions.take(3).toList();
   }
 
   Future<void> addTrack(SpotifyTrack track) async {

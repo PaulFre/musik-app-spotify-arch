@@ -112,10 +112,16 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                         runSpacing: 8,
                         children: [
                           FilledButton.tonal(
-                            onPressed: _spotifyController.isLoading
+                            onPressed:
+                                _spotifyController.isLoading ||
+                                    connection.spotifyConnected
                                 ? null
                                 : _spotifyController.connectHost,
-                            child: const Text('Mit Spotify verbinden'),
+                            child: Text(
+                              connection.spotifyConnected
+                                  ? 'Spotify verbunden'
+                                  : 'Mit Spotify verbinden',
+                            ),
                           ),
                           OutlinedButton(
                             onPressed:
@@ -124,6 +130,14 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                                 ? _spotifyController.refreshDevices
                                 : null,
                             child: const Text('Geraete laden'),
+                          ),
+                          OutlinedButton(
+                            onPressed:
+                                connection.spotifyConnected &&
+                                    !_spotifyController.isLoading
+                                ? _spotifyController.disconnect
+                                : null,
+                            child: const Text('Ausloggen'),
                           ),
                         ],
                       ),

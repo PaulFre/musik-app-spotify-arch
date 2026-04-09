@@ -24,6 +24,7 @@ class _RoomScreenState extends State<RoomScreen> {
   List<SpotifyTrack> _searchResults = const <SpotifyTrack>[];
   List<SpotifyTrack> _suggestions = const <SpotifyTrack>[];
   bool _isLoadingSuggestions = false;
+  String? _lastSuggestionContext;
 
   @override
   void initState() {
@@ -39,6 +40,13 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 
   Future<void> _loadSuggestions() async {
+    final room = widget.controller.room;
+    final suggestionContext = room == null
+        ? null
+        : <String>[
+            room.nowPlayingTrackId ?? '',
+            ...room.queue.map((item) => item.track.id),
+          ].join('|');
     setState(() {
       _isLoadingSuggestions = true;
     });
@@ -49,6 +57,7 @@ class _RoomScreenState extends State<RoomScreen> {
     setState(() {
       _isLoadingSuggestions = false;
       _suggestions = suggestions.take(3).toList();
+      _lastSuggestionContext = suggestionContext;
     });
   }
 
@@ -127,6 +136,16 @@ class _RoomScreenState extends State<RoomScreen> {
               child: Text('Der Host hat den Raum geschlossen.'),
             ),
           );
+        }
+
+        final currentSuggestionContext = <String>[
+          room.nowPlayingTrackId ?? '',
+          ...room.queue.map((item) => item.track.id),
+        ].join('|');
+        if (_query.trim().isEmpty &&
+            !_isLoadingSuggestions &&
+            _lastSuggestionContext != currentSuggestionContext) {
+          unawaited(_loadSuggestions());
         }
 
         return Scaffold(
