@@ -26,7 +26,11 @@ class InMemoryPartyRoomRepository implements PartyRoomRepository {
       () => StreamController<PartyRoom?>.broadcast(sync: true),
     );
     return Stream<PartyRoom?>.multi((controller) {
-      _activeListenersByCode.update(code, (count) => count + 1, ifAbsent: () => 1);
+      _activeListenersByCode.update(
+        code,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
       controller.add(_rooms[code]);
       final subscription = updates.stream.listen(
         controller.add,
@@ -71,10 +75,8 @@ class InMemoryPartyRoomRepository implements PartyRoomRepository {
     _controllers[code]?.add(closed);
   }
 
-  int get activeListenerCount => _activeListenersByCode.values.fold(
-    0,
-    (sum, count) => sum + count,
-  );
+  int get activeListenerCount =>
+      _activeListenersByCode.values.fold(0, (sum, count) => sum + count);
 
   Future<void> dispose() async {
     if (_isDisposed) {

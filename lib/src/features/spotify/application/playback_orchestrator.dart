@@ -27,7 +27,9 @@ class PlaybackOrchestrator extends ChangeNotifier {
       if (gate != null) {
         return gate;
       }
-      final result = await _connectionController.playbackService.playTrack(track);
+      final result = await _connectionController.playbackService.playTrack(
+        track,
+      );
       await _syncResult(result);
       return result;
     });

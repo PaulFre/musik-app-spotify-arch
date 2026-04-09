@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:party_queue_app/src/app/services.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
+import 'package:party_queue_app/src/features/party/domain/join_input_parser.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/presentation/room_screen.dart';
 
@@ -24,6 +25,14 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
   }
 
   Future<void> _joinRoom() async {
+    final parsedInput = parseJoinInput(_codeController.text);
+    if (parsedInput == null) {
+      setState(
+        () => _error =
+            'Bitte einen gueltigen Raumcode oder Einladungslink eingeben.',
+      );
+      return;
+    }
     final controller = PartyRoomController(
       repository: Services.partyRoomRepository,
       catalogService: Services.spotifyCatalogService,
@@ -31,7 +40,7 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
       spotifyConnectionController: Services.spotifyConnectionController,
     );
     final success = await controller.joinRoom(
-      code: _codeController.text.trim().toUpperCase(),
+      code: parsedInput.normalizedCode,
       user: UserProfile(
         id: 'guest-${DateTime.now().microsecondsSinceEpoch}',
         displayName: _nameController.text.trim().isEmpty
@@ -76,7 +85,7 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
           TextField(
             controller: _codeController,
             textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(labelText: 'Raumcode'),
+            decoration: const InputDecoration(labelText: 'Raumcode oder Link'),
           ),
           const SizedBox(height: 16),
           FilledButton(onPressed: _joinRoom, child: const Text('Beitreten')),

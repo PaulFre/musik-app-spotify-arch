@@ -1,10 +1,7 @@
 enum RoomPlaybackIntentType { none, playTrack, pause, resume, skip, closeRoom }
 
 class RoomPlaybackIntent {
-  const RoomPlaybackIntent._({
-    required this.type,
-    this.trackId,
-  });
+  const RoomPlaybackIntent._({required this.type, this.trackId});
 
   const RoomPlaybackIntent.none() : this._(type: RoomPlaybackIntentType.none);
 

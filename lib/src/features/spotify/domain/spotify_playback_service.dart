@@ -21,8 +21,16 @@ abstract class SpotifyPlaybackService {
 
 class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
   static const List<SpotifyDevice> _devices = <SpotifyDevice>[
-    SpotifyDevice(id: 'device-speaker', name: 'Wohnzimmer Speaker', type: 'speaker'),
-    SpotifyDevice(id: 'device-browser', name: 'Browser Player', type: 'computer'),
+    SpotifyDevice(
+      id: 'device-speaker',
+      name: 'Wohnzimmer Speaker',
+      type: 'speaker',
+    ),
+    SpotifyDevice(
+      id: 'device-browser',
+      name: 'Browser Player',
+      type: 'computer',
+    ),
   ];
 
   SpotifyPlaybackState _state = const SpotifyPlaybackState(

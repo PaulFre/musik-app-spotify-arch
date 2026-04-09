@@ -20,8 +20,7 @@ class Services {
         authService: spotifyAuthService,
         playbackService: spotifyPlaybackService,
       );
-  static final PlaybackOrchestrator playbackOrchestrator =
-      PlaybackOrchestrator(
-        connectionController: spotifyConnectionController,
-      );
+  static final PlaybackOrchestrator playbackOrchestrator = PlaybackOrchestrator(
+    connectionController: spotifyConnectionController,
+  );
 }

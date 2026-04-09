@@ -3,6 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
+import 'package:party_queue_app/src/features/party/domain/models/room_playback_intent.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/domain/models/vote_type.dart';
@@ -60,7 +61,11 @@ void main() {
       print('[minimal] arrange');
       final host = createController();
       await host.createRoom(
-        host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
         settings: const RoomSettings(),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -74,7 +79,11 @@ void main() {
       final host = createController();
       final guest = createController();
       await host.createRoom(
-        host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
         settings: const RoomSettings(maxParticipants: 5),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -93,9 +102,16 @@ void main() {
     test('small wave: host plus three guests with one add', () async {
       print('[small-wave] arrange');
       final host = createController();
-      final guests = List<PartyRoomController>.generate(3, (_) => createController());
+      final guests = List<PartyRoomController>.generate(
+        3,
+        (_) => createController(),
+      );
       await host.createRoom(
-        host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
         settings: const RoomSettings(maxParticipants: 10),
       );
       for (var index = 0; index < guests.length; index++) {
@@ -118,9 +134,16 @@ void main() {
     test('medium wave: host plus three guests with vote and play', () async {
       print('[medium-wave] arrange');
       final host = createController();
-      final guests = List<PartyRoomController>.generate(3, (_) => createController());
+      final guests = List<PartyRoomController>.generate(
+        3,
+        (_) => createController(),
+      );
       await host.createRoom(
-        host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
         settings: const RoomSettings(maxParticipants: 10, cooldownMinutes: 5),
       );
       for (var index = 0; index < guests.length; index++) {
@@ -140,8 +163,11 @@ void main() {
       await host.playTopSong();
       await Future<void>.delayed(const Duration(milliseconds: 20));
       print('[medium-wave] assert');
-      expect(host.room!.nowPlayingTrackId, tracks[0].id);
-      expect(host.nowPlayingTitle, tracks[0].title);
+      expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.playTrack);
+      expect(host.room!.playbackIntent.trackId, tracks[0].id);
+      expect(host.room!.desiredNowPlayingTrackId, tracks[0].id);
+      expect(host.room!.nowPlayingTrackId, isNull);
+      expect(host.nowPlayingTitle, isNull);
       expect(repository.activeListenerCount, 4);
     });
   });

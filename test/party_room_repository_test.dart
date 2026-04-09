@@ -25,8 +25,13 @@ void main() {
 
     await repository.saveRoom(room);
 
-    await expectLater(repository.watchRoom('ABC123'), emits(predicate((value) {
-      return value is PartyRoom && value.code == 'ABC123';
-    })));
+    await expectLater(
+      repository.watchRoom('ABC123'),
+      emits(
+        predicate((value) {
+          return value is PartyRoom && value.code == 'ABC123';
+        }),
+      ),
+    );
   });
 }

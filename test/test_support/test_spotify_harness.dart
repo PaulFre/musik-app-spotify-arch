@@ -32,7 +32,8 @@ class TestSpotifyHarness {
       playbackOrchestrator: orchestrator,
     );
     await readyHarness.connectionController.connectHost();
-    final devices = readyHarness.connectionController.playbackState.availableDevices;
+    final devices =
+        readyHarness.connectionController.playbackState.availableDevices;
     if (devices.isNotEmpty) {
       await readyHarness.connectionController.selectDevice(devices.first.id);
     }

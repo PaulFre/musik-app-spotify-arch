@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
+import 'package:party_queue_app/src/features/party/domain/models/room_playback_intent.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/domain/models/vote_type.dart';
@@ -48,7 +49,10 @@ void main() {
     await _settle();
 
     final roomCode = host.room!.code;
-    final guests = List<PartyRoomController>.generate(10, (_) => createController());
+    final guests = List<PartyRoomController>.generate(
+      10,
+      (_) => createController(),
+    );
 
     for (var index = 0; index < guests.length; index++) {
       final joined = await guests[index].joinRoom(
@@ -83,35 +87,126 @@ void main() {
       await controller.vote(trackId: topTrack.id, voteType: VoteType.like);
     }
     for (final controller in guests.skip(7)) {
-      await controller.vote(trackId: secondTrack.id, voteType: VoteType.dislike);
+      await controller.vote(
+        trackId: secondTrack.id,
+        voteType: VoteType.dislike,
+      );
     }
     await _settle();
 
     expect(host.room!.queue.first.track.id, topTrack.id);
-    expect(host.room!.queue.first.score, 8);
+    expect(host.room!.queue.first.score, 7);
 
     await host.playTopSong();
     await _settle();
 
-    expect(host.room!.nowPlayingTrackId, topTrack.id);
-    expect(host.nowPlayingTitle, topTrack.title);
-    expect(guests.first.nowPlayingTitle, topTrack.title);
-    expect(host.room!.queue.every((item) => item.track.id != topTrack.id), isTrue);
+    expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.playTrack);
+    expect(host.room!.playbackIntent.trackId, topTrack.id);
+    expect(host.room!.desiredNowPlayingTrackId, topTrack.id);
+    expect(host.room!.nowPlayingTrackId, isNull);
+    expect(host.nowPlayingTitle, isNull);
+    expect(
+      host.room!.queue.any((item) => item.track.id == topTrack.id),
+      isTrue,
+    );
 
     await host.pauseOrResume();
     await _settle();
-    expect(host.room!.isPaused, isTrue);
+    expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.pause);
+    expect(host.room!.isPaused, isFalse);
 
     await host.skipNowPlaying();
     await _settle();
-    expect(host.room!.nowPlayingTrackId, isNot(topTrack.id));
-    expect(host.nowPlayingTitle, isNotNull);
+    expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.skip);
+    expect(host.room!.desiredNowPlayingTrackId, topTrack.id);
+    expect(host.nowPlayingTitle, isNull);
 
     await host.closeRoom();
     await _settle();
     expect(host.room!.isClosed, isTrue);
     expect(guests.last.room!.isClosed, isTrue);
   });
+
+  test(
+    'guest leave updates room lifecycle without closing host room',
+    () async {
+      final host = createController();
+
+      await host.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(cooldownMinutes: 15, maxParticipants: 20),
+      );
+      await _settle();
+
+      final guestA = createController();
+      final guestB = createController();
+
+      await guestA.joinRoom(
+        code: host.room!.code,
+        user: const UserProfile(id: 'guest-a', displayName: 'Gast A'),
+      );
+      await guestB.joinRoom(
+        code: host.room!.code,
+        user: const UserProfile(id: 'guest-b', displayName: 'Gast B'),
+      );
+      await _settle();
+
+      expect(host.room!.participantCount, 3);
+      expect(guestA.hasJoinedRoom, isTrue);
+
+      await guestA.leaveRoom();
+      await _settle();
+
+      expect(guestA.activeUserId, isNull);
+      expect(guestA.hasJoinedRoom, isFalse);
+      expect(host.room!.participantCount, 2);
+      expect(host.room!.isClosed, isFalse);
+      expect(guestB.room!.participantCount, 2);
+    },
+  );
+
+  test(
+    'voting reorders queue by score only and never starts playback by itself',
+    () async {
+      final host = createController();
+      final guest = createController();
+
+      await host.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(cooldownMinutes: 15, maxParticipants: 20),
+      );
+      await _settle();
+
+      await guest.joinRoom(
+        code: host.room!.code,
+        user: const UserProfile(id: 'guest-1', displayName: 'Gast 1'),
+      );
+      await _settle();
+
+      final tracks = await host.search('');
+      await host.addTrack(tracks[0]);
+      await guest.addTrack(tracks[1]);
+      await _settle();
+
+      expect(host.room!.nowPlayingTrackId, isNull);
+
+      await guest.vote(trackId: tracks[1].id, voteType: VoteType.like);
+      await host.vote(trackId: tracks[1].id, voteType: VoteType.like);
+      await _settle();
+
+      expect(host.room!.queue.first.track.id, tracks[1].id);
+      expect(host.room!.nowPlayingTrackId, isNull);
+      expect(host.room!.playbackIntent.isNone, isTrue);
+    },
+  );
 }
 
 Future<void> _settle() async {

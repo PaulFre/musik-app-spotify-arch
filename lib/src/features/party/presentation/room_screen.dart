@@ -173,13 +173,15 @@ class _HostActions extends StatelessWidget {
           child: const Text('Top Song spielen'),
         ),
         FilledButton.tonal(
-          onPressed:
-              controller.isPlaybackReady ? controller.skipNowPlaying : null,
+          onPressed: controller.isPlaybackReady
+              ? controller.skipNowPlaying
+              : null,
           child: const Text('Skip'),
         ),
         FilledButton.tonal(
-          onPressed:
-              controller.isPlaybackReady ? controller.pauseOrResume : null,
+          onPressed: controller.isPlaybackReady
+              ? controller.pauseOrResume
+              : null,
           child: const Text('Pause/Resume'),
         ),
       ],
