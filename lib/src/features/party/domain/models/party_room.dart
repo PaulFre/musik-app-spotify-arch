@@ -4,6 +4,8 @@ import 'package:party_queue_app/src/features/party/domain/models/room_settings.d
 import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 
+const Object _unset = Object();
+
 class PartyRoom {
   PartyRoom({
     required this.code,
@@ -15,9 +17,11 @@ class PartyRoom {
     Map<String, DateTime>? cooldownByTrackId,
     this.desiredNowPlayingTrackId,
     this.playbackIntent = const RoomPlaybackIntent.none(),
+    this.playbackIntentVersion = 0,
     this.nowPlayingTrack,
     this.nowPlayingTrackId,
     this.isPaused = false,
+    this.playbackErrorMessage,
     this.closedAt,
   }) : participants = participants ?? <String, UserProfile>{},
        queue = queue ?? <QueueItem>[],
@@ -32,9 +36,11 @@ class PartyRoom {
   final Map<String, DateTime> cooldownByTrackId;
   final String? desiredNowPlayingTrackId;
   final RoomPlaybackIntent playbackIntent;
+  final int playbackIntentVersion;
   final SpotifyTrack? nowPlayingTrack;
   final String? nowPlayingTrackId;
   final bool isPaused;
+  final String? playbackErrorMessage;
   final DateTime? closedAt;
 
   bool get isClosed => closedAt != null;
@@ -48,12 +54,14 @@ class PartyRoom {
     Map<String, UserProfile>? participants,
     List<QueueItem>? queue,
     Map<String, DateTime>? cooldownByTrackId,
-    String? desiredNowPlayingTrackId,
+    Object? desiredNowPlayingTrackId = _unset,
     RoomPlaybackIntent? playbackIntent,
-    SpotifyTrack? nowPlayingTrack,
-    String? nowPlayingTrackId,
+    int? playbackIntentVersion,
+    Object? nowPlayingTrack = _unset,
+    Object? nowPlayingTrackId = _unset,
     bool? isPaused,
-    DateTime? closedAt,
+    Object? playbackErrorMessage = _unset,
+    Object? closedAt = _unset,
   }) {
     return PartyRoom(
       code: code ?? this.code,
@@ -67,12 +75,23 @@ class PartyRoom {
           cooldownByTrackId ??
           Map<String, DateTime>.from(this.cooldownByTrackId),
       desiredNowPlayingTrackId:
-          desiredNowPlayingTrackId ?? this.desiredNowPlayingTrackId,
+          desiredNowPlayingTrackId == _unset
+          ? this.desiredNowPlayingTrackId
+          : desiredNowPlayingTrackId as String?,
       playbackIntent: playbackIntent ?? this.playbackIntent,
-      nowPlayingTrack: nowPlayingTrack ?? this.nowPlayingTrack,
-      nowPlayingTrackId: nowPlayingTrackId ?? this.nowPlayingTrackId,
+      playbackIntentVersion:
+          playbackIntentVersion ?? this.playbackIntentVersion,
+      nowPlayingTrack: nowPlayingTrack == _unset
+          ? this.nowPlayingTrack
+          : nowPlayingTrack as SpotifyTrack?,
+      nowPlayingTrackId: nowPlayingTrackId == _unset
+          ? this.nowPlayingTrackId
+          : nowPlayingTrackId as String?,
       isPaused: isPaused ?? this.isPaused,
-      closedAt: closedAt ?? this.closedAt,
+      playbackErrorMessage: playbackErrorMessage == _unset
+          ? this.playbackErrorMessage
+          : playbackErrorMessage as String?,
+      closedAt: closedAt == _unset ? this.closedAt : closedAt as DateTime?,
     );
   }
 }

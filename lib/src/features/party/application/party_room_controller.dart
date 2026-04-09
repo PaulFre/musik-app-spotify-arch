@@ -12,6 +12,7 @@ import 'package:party_queue_app/src/features/party/domain/models/user_profile.da
 import 'package:party_queue_app/src/features/party/domain/models/vote_type.dart';
 import 'package:party_queue_app/src/features/party/domain/queue_sorting.dart';
 import 'package:party_queue_app/src/features/spotify/application/playback_orchestrator.dart';
+import 'package:party_queue_app/src/features/spotify/application/room_playback_intent_processor.dart';
 import 'package:party_queue_app/src/features/spotify/application/spotify_connection_controller.dart';
 import 'package:party_queue_app/src/features/spotify/domain/models/spotify_playback_state.dart';
 import 'package:party_queue_app/src/features/spotify/domain/spotify_catalog_service.dart';
@@ -22,10 +23,17 @@ class PartyRoomController extends ChangeNotifier {
     required SpotifyCatalogService catalogService,
     required PlaybackOrchestrator playbackOrchestrator,
     SpotifyConnectionController? spotifyConnectionController,
+    RoomPlaybackIntentProcessor? roomPlaybackIntentProcessor,
   }) : _repository = repository,
        _catalogService = catalogService,
        _playbackOrchestrator = playbackOrchestrator,
-       _spotifyConnectionController = spotifyConnectionController {
+       _spotifyConnectionController = spotifyConnectionController,
+       _roomPlaybackIntentProcessor =
+           roomPlaybackIntentProcessor ??
+           RoomPlaybackIntentProcessor(
+             repository: repository,
+             playbackOrchestrator: playbackOrchestrator,
+           ) {
     _playbackOrchestrator.addListener(notifyListeners);
     _spotifyConnectionController?.addListener(notifyListeners);
   }
@@ -34,6 +42,7 @@ class PartyRoomController extends ChangeNotifier {
   final SpotifyCatalogService _catalogService;
   final PlaybackOrchestrator _playbackOrchestrator;
   final SpotifyConnectionController? _spotifyConnectionController;
+  final RoomPlaybackIntentProcessor _roomPlaybackIntentProcessor;
   StreamSubscription<PartyRoom?>? _roomSub;
 
   PartyRoom? _room;
@@ -94,6 +103,7 @@ class PartyRoomController extends ChangeNotifier {
     _error = null;
     await _repository.saveRoom(room);
     _startWatching(code);
+    _roomPlaybackIntentProcessor.start(code);
   }
 
   Future<bool> joinRoom({
@@ -120,6 +130,9 @@ class PartyRoomController extends ChangeNotifier {
     _error = null;
     await _repository.saveRoom(updatedRoom);
     _startWatching(code);
+    if (user.id == updatedRoom.hostUserId) {
+      _roomPlaybackIntentProcessor.start(code);
+    }
     return true;
   }
 
@@ -253,6 +266,8 @@ class PartyRoomController extends ChangeNotifier {
     final intentRoom = room.copyWith(
       desiredNowPlayingTrackId: top.track.id,
       playbackIntent: RoomPlaybackIntent.playTrack(top.track.id),
+      playbackIntentVersion: _nextPlaybackIntentVersion(room),
+      playbackErrorMessage: null,
     );
     _room = intentRoom;
     await _repository.saveRoom(intentRoom);
@@ -268,6 +283,8 @@ class PartyRoomController extends ChangeNotifier {
     }
     final intentRoom = room.copyWith(
       playbackIntent: const RoomPlaybackIntent.skip(),
+      playbackIntentVersion: _nextPlaybackIntentVersion(room),
+      playbackErrorMessage: null,
     );
     _error = null;
     _room = intentRoom;
@@ -296,6 +313,8 @@ class PartyRoomController extends ChangeNotifier {
       playbackIntent: isResuming
           ? const RoomPlaybackIntent.resume()
           : const RoomPlaybackIntent.pause(),
+      playbackIntentVersion: _nextPlaybackIntentVersion(room),
+      playbackErrorMessage: null,
     );
     _error = null;
     _room = intentRoom;
@@ -330,6 +349,7 @@ class PartyRoomController extends ChangeNotifier {
     }
 
     if (isHost) {
+      _roomPlaybackIntentProcessor.stop();
       await closeRoom();
       _roomSub?.cancel();
       _roomSub = null;
@@ -379,8 +399,13 @@ class PartyRoomController extends ChangeNotifier {
     return _repository.readRoom(room.code) ?? room;
   }
 
+  int _nextPlaybackIntentVersion(PartyRoom room) {
+    return room.playbackIntentVersion + 1;
+  }
+
   @override
   void dispose() {
+    _roomPlaybackIntentProcessor.dispose();
     _roomSub?.cancel();
     _playbackOrchestrator.removeListener(notifyListeners);
     _spotifyConnectionController?.removeListener(notifyListeners);

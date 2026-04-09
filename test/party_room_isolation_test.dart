@@ -3,7 +3,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
-import 'package:party_queue_app/src/features/party/domain/models/room_playback_intent.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/domain/models/vote_type.dart';
@@ -71,7 +70,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       print('[minimal] assert');
       expect(host.room, isNotNull);
-      expect(repository.activeListenerCount, 1);
+      expect(repository.activeListenerCount, 2);
     });
 
     test('join only: host plus one guest', () async {
@@ -96,7 +95,7 @@ void main() {
       print('[join] assert');
       expect(joined, isTrue);
       expect(host.room!.participantCount, 2);
-      expect(repository.activeListenerCount, 2);
+      expect(repository.activeListenerCount, 3);
     });
 
     test('small wave: host plus three guests with one add', () async {
@@ -128,7 +127,7 @@ void main() {
       print('[small-wave] assert');
       expect(host.room!.participantCount, 4);
       expect(host.room!.queue.length, 1);
-      expect(repository.activeListenerCount, 4);
+      expect(repository.activeListenerCount, 5);
     });
 
     test('medium wave: host plus three guests with vote and play', () async {
@@ -163,12 +162,11 @@ void main() {
       await host.playTopSong();
       await Future<void>.delayed(const Duration(milliseconds: 20));
       print('[medium-wave] assert');
-      expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.playTrack);
-      expect(host.room!.playbackIntent.trackId, tracks[0].id);
-      expect(host.room!.desiredNowPlayingTrackId, tracks[0].id);
-      expect(host.room!.nowPlayingTrackId, isNull);
-      expect(host.nowPlayingTitle, isNull);
-      expect(repository.activeListenerCount, 4);
+      expect(host.room!.playbackIntent.isNone, isTrue);
+      expect(host.room!.desiredNowPlayingTrackId, isNull);
+      expect(host.room!.nowPlayingTrackId, tracks[0].id);
+      expect(host.nowPlayingTitle, tracks[0].title);
+      expect(repository.activeListenerCount, 5);
     });
   });
 }

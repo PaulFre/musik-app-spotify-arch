@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
-import 'package:party_queue_app/src/features/party/domain/models/room_playback_intent.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/domain/models/vote_type.dart';
@@ -100,26 +99,26 @@ void main() {
     await host.playTopSong();
     await _settle();
 
-    expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.playTrack);
-    expect(host.room!.playbackIntent.trackId, topTrack.id);
-    expect(host.room!.desiredNowPlayingTrackId, topTrack.id);
-    expect(host.room!.nowPlayingTrackId, isNull);
-    expect(host.nowPlayingTitle, isNull);
+    expect(host.room!.playbackIntent.isNone, isTrue);
+    expect(host.room!.desiredNowPlayingTrackId, isNull);
+    expect(host.room!.nowPlayingTrackId, topTrack.id);
+    expect(host.nowPlayingTitle, topTrack.title);
+    expect(guests.first.nowPlayingTitle, topTrack.title);
     expect(
       host.room!.queue.any((item) => item.track.id == topTrack.id),
-      isTrue,
+      isFalse,
     );
 
     await host.pauseOrResume();
     await _settle();
-    expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.pause);
-    expect(host.room!.isPaused, isFalse);
+    expect(host.room!.playbackIntent.isNone, isTrue);
+    expect(host.room!.isPaused, isTrue);
 
     await host.skipNowPlaying();
-    await _settle();
-    expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.skip);
-    expect(host.room!.desiredNowPlayingTrackId, topTrack.id);
-    expect(host.nowPlayingTitle, isNull);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(host.room!.playbackIntent.isNone, isTrue);
+    expect(host.room!.nowPlayingTrackId, isNot(topTrack.id));
+    expect(host.nowPlayingTitle, isNotNull);
 
     await host.closeRoom();
     await _settle();

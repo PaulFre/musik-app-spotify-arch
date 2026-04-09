@@ -66,6 +66,15 @@ class _RoomScreenState extends State<RoomScreen> {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              if (room.playbackErrorMessage != null)
+                Card(
+                  color: Colors.orange.withValues(alpha: 0.12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(room.playbackErrorMessage!),
+                  ),
+                ),
+              if (room.playbackErrorMessage != null) const SizedBox(height: 8),
               _NowPlayingCard(
                 title: widget.controller.nowPlayingTitle ?? 'Noch kein Song',
                 paused: room.isPaused,

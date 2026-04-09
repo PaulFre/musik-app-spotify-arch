@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
-import 'package:party_queue_app/src/features/party/domain/models/room_playback_intent.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/domain/models/vote_type.dart';
@@ -116,7 +115,7 @@ void main() {
         await _settle();
 
         final roomAfterVotes = host.room!;
-        final expectedQueueLength = 5 * (wave + 1);
+        final expectedQueueLength = (5 * (wave + 1)) - wave;
         expect(roomAfterVotes.queue.length, expectedQueueLength);
         for (final item in roomAfterVotes.queue) {
           expect(item.score, inInclusiveRange(-31, 31));
@@ -134,25 +133,22 @@ void main() {
 
         await host.playTopSong();
         await _settle();
-        expect(
-          host.room!.playbackIntent.type,
-          RoomPlaybackIntentType.playTrack,
-        );
-        expect(host.room!.playbackIntent.trackId, topTrackBeforePlay);
-        expect(host.room!.desiredNowPlayingTrackId, topTrackBeforePlay);
-        expect(host.nowPlayingTitle, isNull);
+        expect(host.room!.playbackIntent.isNone, isTrue);
+        expect(host.room!.desiredNowPlayingTrackId, isNull);
+        expect(host.room!.nowPlayingTrackId, topTrackBeforePlay);
+        expect(host.nowPlayingTitle, isNotNull);
         expect(
           host.room!.queue.any((item) => item.track.id == topTrackBeforePlay),
-          isTrue,
+          isFalse,
         );
 
         await host.pauseOrResume();
         await _settle();
-        expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.pause);
-        expect(host.room!.isPaused, isFalse);
+        expect(host.room!.playbackIntent.isNone, isTrue);
+        expect(host.room!.isPaused, isTrue);
         await host.pauseOrResume();
         await _settle();
-        expect(host.room!.playbackIntent.type, RoomPlaybackIntentType.pause);
+        expect(host.room!.playbackIntent.isNone, isTrue);
         expect(host.room!.isPaused, isFalse);
       }
 
