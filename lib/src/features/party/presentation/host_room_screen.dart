@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:party_queue_app/src/app/services.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
+import 'package:party_queue_app/src/features/party/data/host_flow_resume_store.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/presentation/room_screen.dart';
@@ -21,6 +22,13 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
   int _cooldown = 15;
   int _maxParticipants = 25;
   bool _isPublic = false;
+  String? _lastSnackErrorCode;
+
+  @override
+  void initState() {
+    super.initState();
+    _spotifyController.addListener(_handleSpotifyStateChanged);
+  }
 
   @override
   void didChangeDependencies() {
@@ -30,8 +38,38 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
 
   @override
   void dispose() {
+    _spotifyController.removeListener(_handleSpotifyStateChanged);
     _nameController.dispose();
     super.dispose();
+  }
+
+  void _handleSpotifyStateChanged() {
+    final connection = _spotifyController.connectionState;
+    final errorCode = connection.errorCode;
+    if (!mounted ||
+        errorCode == null ||
+        errorCode == _lastSnackErrorCode ||
+        errorCode != 'spotify-auth-cancelled') {
+      return;
+    }
+    _lastSnackErrorCode = errorCode;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text(
+          connection.errorMessage ?? 'Spotify-Verbindung wurde abgebrochen.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _connectSpotify() async {
+    await HostFlowResumeStore.markPendingHostSetup();
+    await _spotifyController.connectHost();
+    if (!mounted) {
+      return;
+    }
+    await HostFlowResumeStore.consumePendingHostSetup();
   }
 
   Future<void> _createRoom() async {
@@ -116,7 +154,7 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                                 _spotifyController.isLoading ||
                                     connection.spotifyConnected
                                 ? null
-                                : _spotifyController.connectHost,
+                                : _connectSpotify,
                             child: Text(
                               connection.spotifyConnected
                                   ? 'Spotify verbunden'

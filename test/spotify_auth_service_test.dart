@@ -123,6 +123,56 @@ void main() {
     },
   );
 
+  test('restoreSession maps access_denied to a cancelled auth state', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'spotify.auth.pending_state': 'expected-state',
+      'spotify.auth.code_verifier': 'expected-verifier',
+    });
+
+    final service = SpotifyPkceAuthService(
+      config: config,
+      isWeb: true,
+      currentUri: () => Uri.parse(
+        '${config.redirectUri}?error=access_denied&state=expected-state',
+      ),
+      replaceCurrentUrl: (_) {},
+      redirectTo: (_) async {},
+      httpClient: MockClient((_) async => http.Response('{}', 200)),
+    );
+
+    final state = await service.restoreSession();
+
+    expect(state.spotifyConnected, isFalse);
+    expect(state.errorCode, 'spotify-auth-cancelled');
+    expect(state.errorMessage, 'Spotify-Verbindung wurde abgebrochen.');
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('spotify.auth.pending_state'), isNull);
+    expect(prefs.getString('spotify.auth.code_verifier'), isNull);
+  });
+
+  test('restoreSession treats callback without code as cancelled auth', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'spotify.auth.pending_state': 'expected-state',
+      'spotify.auth.code_verifier': 'expected-verifier',
+    });
+
+    final service = SpotifyPkceAuthService(
+      config: config,
+      isWeb: true,
+      currentUri: () => Uri.parse('${config.redirectUri}?state=expected-state'),
+      replaceCurrentUrl: (_) {},
+      redirectTo: (_) async {},
+      httpClient: MockClient((_) async => http.Response('{}', 200)),
+    );
+
+    final state = await service.restoreSession();
+
+    expect(state.spotifyConnected, isFalse);
+    expect(state.errorCode, 'spotify-auth-cancelled');
+    expect(state.errorMessage, 'Spotify-Verbindung wurde abgebrochen.');
+  });
+
   test(
     'restoreSession keeps host connected but blocks non-premium accounts',
     () async {

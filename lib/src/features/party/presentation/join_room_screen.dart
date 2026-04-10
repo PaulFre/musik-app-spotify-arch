@@ -6,14 +6,18 @@ import 'package:party_queue_app/src/features/party/domain/models/user_profile.da
 import 'package:party_queue_app/src/features/party/presentation/room_screen.dart';
 
 class JoinRoomScreen extends StatefulWidget {
-  const JoinRoomScreen({super.key});
+  const JoinRoomScreen({super.key, this.initialJoinInput});
+
+  final String? initialJoinInput;
 
   @override
   State<JoinRoomScreen> createState() => _JoinRoomScreenState();
 }
 
 class _JoinRoomScreenState extends State<JoinRoomScreen> {
-  final _codeController = TextEditingController();
+  late final TextEditingController _codeController = TextEditingController(
+    text: widget.initialJoinInput ?? '',
+  );
   final _nameController = TextEditingController(text: 'Gast');
   String? _error;
 

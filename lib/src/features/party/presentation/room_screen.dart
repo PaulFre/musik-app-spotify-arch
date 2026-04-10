@@ -1,10 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:party_queue_app/src/app/services.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
+import 'package:party_queue_app/src/features/party/domain/room_invite_link_builder.dart';
 import 'package:party_queue_app/src/features/party/domain/models/queue_item.dart';
 import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
 import 'package:party_queue_app/src/features/party/domain/models/vote_type.dart';
+import 'package:party_queue_app/src/features/party/domain/room_playlist_export_builder.dart';
+import 'package:party_queue_app/src/features/party/presentation/room_guests_sheet.dart';
+import 'package:party_queue_app/src/features/party/presentation/room_invite_sheet.dart';
+import 'package:party_queue_app/src/features/party/presentation/room_playlist_export_sheet.dart';
+import 'package:party_queue_app/src/features/party/presentation/room_settings_sheet.dart';
 
 class RoomScreen extends StatefulWidget {
   const RoomScreen({super.key, required this.controller});
@@ -25,6 +32,77 @@ class _RoomScreenState extends State<RoomScreen> {
   List<SpotifyTrack> _suggestions = const <SpotifyTrack>[];
   bool _isLoadingSuggestions = false;
   String? _lastSuggestionContext;
+
+  Future<void> _handleHostMenuAction(_HostMenuAction action) async {
+    switch (action) {
+      case _HostMenuAction.invite:
+        await _showInviteSheet();
+      case _HostMenuAction.exportPlaylist:
+        await _showPlaylistExportSheet();
+      case _HostMenuAction.guests:
+        await _showGuestsSheet();
+      case _HostMenuAction.settings:
+        await _showSettingsSheet();
+      case _HostMenuAction.closeRoom:
+        await widget.controller.closeRoom();
+    }
+  }
+
+  Future<void> _showInviteSheet() async {
+    final room = widget.controller.room;
+    if (room == null) {
+      return;
+    }
+    final inviteLink = buildRoomInviteLink(
+      room.code,
+      publicBaseUri: Services.appConfig.publicInviteBaseUri,
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) =>
+          RoomInviteSheet(roomCode: room.code, inviteLink: inviteLink),
+    );
+  }
+
+  Future<void> _showGuestsSheet() async {
+    final room = widget.controller.room;
+    if (room == null) {
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => RoomGuestsSheet(controller: widget.controller),
+    );
+  }
+
+  Future<void> _showPlaylistExportSheet() async {
+    final room = widget.controller.room;
+    if (room == null || !widget.controller.isHost) {
+      return;
+    }
+    final exportText = buildRoomPlaylistExportText(room);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => RoomPlaylistExportSheet(
+        exportText: exportText,
+        hasTracks: room.queue.isNotEmpty,
+      ),
+    );
+  }
+
+  Future<void> _showSettingsSheet() async {
+    if (widget.controller.room == null || !widget.controller.isHost) {
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => RoomSettingsSheet(controller: widget.controller),
+    );
+  }
 
   @override
   void initState() {
@@ -153,10 +231,34 @@ class _RoomScreenState extends State<RoomScreen> {
             title: Text('Raum ${room.code}'),
             actions: [
               if (widget.controller.isHost)
-                IconButton(
-                  onPressed: () async => widget.controller.closeRoom(),
-                  icon: const Icon(Icons.logout),
-                  tooltip: 'Raum schliessen',
+                PopupMenuButton<_HostMenuAction>(
+                  tooltip: 'Host-Menue',
+                  onSelected: (action) =>
+                      unawaited(_handleHostMenuAction(action)),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<_HostMenuAction>(
+                      value: _HostMenuAction.invite,
+                      child: Text('Einladen'),
+                    ),
+                    PopupMenuItem<_HostMenuAction>(
+                      value: _HostMenuAction.exportPlaylist,
+                      child: Text('Playlist exportieren'),
+                    ),
+                    PopupMenuItem<_HostMenuAction>(
+                      value: _HostMenuAction.guests,
+                      child: Text('Gaeste'),
+                    ),
+                    PopupMenuItem<_HostMenuAction>(
+                      value: _HostMenuAction.settings,
+                      child: Text('Einstellungen'),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem<_HostMenuAction>(
+                      value: _HostMenuAction.closeRoom,
+                      child: Text('Raum schliessen'),
+                    ),
+                  ],
+                  icon: const Icon(Icons.menu),
                 ),
             ],
           ),
@@ -205,8 +307,7 @@ class _RoomScreenState extends State<RoomScreen> {
                                     _searchController.clear();
                                     _query = '';
                                     _searchError = null;
-                                    _searchResults =
-                                        const <SpotifyTrack>[];
+                                    _searchResults = const <SpotifyTrack>[];
                                   });
                                 },
                               )),
@@ -304,6 +405,8 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 }
+
+enum _HostMenuAction { invite, exportPlaylist, guests, settings, closeRoom }
 
 class _NowPlayingCard extends StatelessWidget {
   const _NowPlayingCard({

@@ -135,7 +135,7 @@ class SpotifyPkceAuthService implements SpotifyAuthService {
     final code = uri.queryParameters['code'];
     final error = uri.queryParameters['error'];
     final state = uri.queryParameters['state'];
-    if (code == null && error == null) {
+    if (code == null && error == null && state == null) {
       return null;
     }
 
@@ -144,8 +144,25 @@ class SpotifyPkceAuthService implements SpotifyAuthService {
       await prefs.remove(_stateKey);
       await prefs.remove(_verifierKey);
       _replaceCurrentUrl(_cleanUri(uri));
+      if (error == 'access_denied') {
+        return const SpotifyConnectionState(
+          errorCode: 'spotify-auth-cancelled',
+          errorMessage: 'Spotify-Verbindung wurde abgebrochen.',
+        );
+      }
       return SpotifyConnectionState(
+        errorCode: 'spotify-auth-failed',
         errorMessage: 'Spotify Auth Fehler: $error',
+      );
+    }
+
+    if (code == null) {
+      await prefs.remove(_stateKey);
+      await prefs.remove(_verifierKey);
+      _replaceCurrentUrl(_cleanUri(uri));
+      return const SpotifyConnectionState(
+        errorCode: 'spotify-auth-cancelled',
+        errorMessage: 'Spotify-Verbindung wurde abgebrochen.',
       );
     }
 
@@ -169,7 +186,7 @@ class SpotifyPkceAuthService implements SpotifyAuthService {
       body: <String, String>{
         'client_id': _config.clientId,
         'grant_type': 'authorization_code',
-        'code': code!,
+        'code': code,
         'redirect_uri': _config.redirectUri,
         'code_verifier': verifier,
       },

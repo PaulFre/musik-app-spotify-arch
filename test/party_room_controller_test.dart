@@ -113,6 +113,111 @@ void main() {
     harness.dispose();
   });
 
+  test('host can update room settings and guest cannot', () async {
+    final harness = await TestSpotifyHarness.ready(
+      catalogService: FakeSpotifyCatalogService(),
+    );
+    final repository = InMemoryPartyRoomRepository();
+    final host = PartyRoomController(
+      repository: repository,
+      catalogService: harness.catalogService,
+      playbackOrchestrator: harness.playbackOrchestrator,
+      spotifyConnectionController: harness.connectionController,
+    );
+    final guest = PartyRoomController(
+      repository: repository,
+      catalogService: harness.catalogService,
+      playbackOrchestrator: harness.playbackOrchestrator,
+      spotifyConnectionController: harness.connectionController,
+    );
+
+    await host.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await guest.joinRoom(
+      code: host.room!.code,
+      user: const UserProfile(id: 'guest-1', displayName: 'Gast 1'),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final hostUpdated = await host.updateRoomSettings(
+      host.room!.settings.copyWith(
+        cooldownMinutes: 30,
+        maxParticipants: 40,
+        maxQueuedTracksPerUser: 5,
+      ),
+    );
+    expect(hostUpdated, isTrue);
+    expect(host.room!.settings.cooldownMinutes, 30);
+    expect(host.room!.settings.maxParticipants, 40);
+    expect(host.room!.settings.maxQueuedTracksPerUser, 5);
+
+    final guestUpdated = await guest.updateRoomSettings(
+      guest.room!.settings.copyWith(maxQueuedTracksPerUser: 1),
+    );
+    expect(guestUpdated, isFalse);
+    expect(host.room!.settings.maxQueuedTracksPerUser, 5);
+
+    host.dispose();
+    guest.dispose();
+    await repository.dispose();
+    harness.dispose();
+  });
+
+  test(
+    'update room settings rejects participant limit below current participants',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final repository = InMemoryPartyRoomRepository();
+      final host = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+      final guest = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await host.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(maxParticipants: 5),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await guest.joinRoom(
+        code: host.room!.code,
+        user: const UserProfile(id: 'guest-1', displayName: 'Gast 1'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final updated = await host.updateRoomSettings(
+        host.room!.settings.copyWith(maxParticipants: 1),
+      );
+      expect(updated, isFalse);
+      expect(
+        host.error,
+        'Teilnehmerlimit darf nicht unter den aktuellen Teilnehmern liegen.',
+      );
+      expect(host.room!.settings.maxParticipants, 5);
+
+      host.dispose();
+      guest.dispose();
+      await repository.dispose();
+      harness.dispose();
+    },
+  );
+
   test(
     'vote can switch direction and does not trigger playback intent',
     () async {
@@ -624,10 +729,160 @@ void main() {
     },
   );
 
-  test('loadSuggestions adapts to room context and excludes queued tracks', () async {
-    final catalogService = ContextAwareCatalogService();
+  test(
+    'loadSuggestions adapts to room context and excludes queued tracks',
+    () async {
+      final catalogService = ContextAwareCatalogService();
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: catalogService,
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await controller.addTrack(
+        const SpotifyTrack(
+          id: 'queued-track',
+          uri: 'spotify:track:queued-track',
+          title: 'Window Shopper',
+          artist: '50 Cent',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final suggestions = await controller.loadSuggestions();
+
+      expect(catalogService.searchQueries, contains('50 Cent'));
+      expect(suggestions, hasLength(3));
+      expect(suggestions.any((track) => track.id == 'queued-track'), isFalse);
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test(
+    'natural song end auto-advances exactly once to the next playable track',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(cooldownMinutes: 15),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final tracks = await controller.search('');
+      await controller.addTrack(tracks[0]);
+      await controller.addTrack(tracks[1]);
+      await controller.addTrack(tracks[2]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await controller.playTopSong();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      harness.connectionController.applyPlaybackState(
+        harness.connectionController.playbackState.copyWith(
+          actualNowPlayingTrackId: null,
+          actualIsPaused: true,
+          playbackErrorCode: null,
+          playbackError: null,
+          lastSyncedAt: DateTime.now(),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.nowPlayingTrackId, tracks[1].id);
+      expect(
+        controller.room!.queue.any((item) => item.track.id == tracks[2].id),
+        isTrue,
+      );
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test(
+    'natural song end clears now playing when no next track exists',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final tracks = await controller.search('');
+      await controller.addTrack(tracks.first);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await controller.playTopSong();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      harness.connectionController.applyPlaybackState(
+        harness.connectionController.playbackState.copyWith(
+          actualNowPlayingTrackId: null,
+          actualIsPaused: true,
+          playbackErrorCode: null,
+          playbackError: null,
+          lastSyncedAt: DateTime.now(),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.nowPlayingTrackId, isNull);
+      expect(controller.room!.nowPlayingTrack, isNull);
+      expect(controller.room!.playbackErrorMessage, isNull);
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test('pause does not trigger auto-advance', () async {
     final harness = await TestSpotifyHarness.ready(
-      catalogService: catalogService,
+      catalogService: FakeSpotifyCatalogService(),
     );
     final controller = PartyRoomController(
       repository: InMemoryPartyRoomRepository(),
@@ -642,21 +897,174 @@ void main() {
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    await controller.addTrack(
-      const SpotifyTrack(
-        id: 'queued-track',
-        uri: 'spotify:track:queued-track',
-        title: 'Window Shopper',
-        artist: '50 Cent',
+    final tracks = await controller.search('');
+    await controller.addTrack(tracks[0]);
+    await controller.addTrack(tracks[1]);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    await controller.playTopSong();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    harness.connectionController.applyPlaybackState(
+      harness.connectionController.playbackState.copyWith(
+        actualNowPlayingTrackId: tracks[0].id,
+        actualIsPaused: true,
+        playbackErrorCode: null,
+        playbackError: null,
+        lastSyncedAt: DateTime.now(),
       ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(controller.room!.playbackIntent.isNone, isTrue);
+    expect(controller.room!.nowPlayingTrackId, tracks[0].id);
+
+    controller.dispose();
+    harness.dispose();
+  });
+
+  test('device unavailable does not trigger false auto-advance', () async {
+    final harness = await TestSpotifyHarness.ready(
+      catalogService: FakeSpotifyCatalogService(),
+    );
+    final controller = PartyRoomController(
+      repository: InMemoryPartyRoomRepository(),
+      catalogService: harness.catalogService,
+      playbackOrchestrator: harness.playbackOrchestrator,
+      spotifyConnectionController: harness.connectionController,
+    );
+
+    await controller.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(),
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final suggestions = await controller.loadSuggestions();
+    final tracks = await controller.search('');
+    await controller.addTrack(tracks[0]);
+    await controller.addTrack(tracks[1]);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    expect(catalogService.searchQueries, contains('50 Cent'));
-    expect(suggestions, hasLength(3));
-    expect(suggestions.any((track) => track.id == 'queued-track'), isFalse);
+    await controller.playTopSong();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    harness.connectionController.applyPlaybackState(
+      harness.connectionController.playbackState.copyWith(
+        selectedDeviceId: null,
+        actualNowPlayingTrackId: null,
+        actualIsPaused: true,
+        playbackErrorCode: 'device-unavailable',
+        playbackError: 'Das ausgewaehlte Geraet ist nicht mehr verfuegbar.',
+        lastSyncedAt: DateTime.now(),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(controller.room!.playbackIntent.isNone, isTrue);
+    expect(controller.room!.nowPlayingTrackId, tracks[0].id);
+
+    controller.dispose();
+    harness.dispose();
+  });
+
+  test(
+    'repeated song-end polls do not trigger auto-advance multiple times',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final tracks = await controller.search('');
+      await controller.addTrack(tracks[0]);
+      await controller.addTrack(tracks[1]);
+      await controller.addTrack(tracks[2]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await controller.playTopSong();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      final endedState = harness.connectionController.playbackState.copyWith(
+        actualNowPlayingTrackId: null,
+        actualIsPaused: true,
+        playbackErrorCode: null,
+        playbackError: null,
+        lastSyncedAt: DateTime.now(),
+      );
+      harness.connectionController.applyPlaybackState(endedState);
+      harness.connectionController.applyPlaybackState(endedState);
+      await Future<void>.delayed(const Duration(milliseconds: 140));
+
+      expect(controller.room!.nowPlayingTrackId, tracks[1].id);
+      expect(
+        controller.room!.queue.any((item) => item.track.id == tracks[2].id),
+        isTrue,
+      );
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test('skip overlapping with song end does not double-advance', () async {
+    final harness = await TestSpotifyHarness.ready(
+      catalogService: FakeSpotifyCatalogService(),
+    );
+    final controller = PartyRoomController(
+      repository: InMemoryPartyRoomRepository(),
+      catalogService: harness.catalogService,
+      playbackOrchestrator: harness.playbackOrchestrator,
+      spotifyConnectionController: harness.connectionController,
+    );
+
+    await controller.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final tracks = await controller.search('');
+    await controller.addTrack(tracks[0]);
+    await controller.addTrack(tracks[1]);
+    await controller.addTrack(tracks[2]);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    await controller.playTopSong();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    await controller.skipNowPlaying();
+    harness.connectionController.applyPlaybackState(
+      harness.connectionController.playbackState.copyWith(
+        actualNowPlayingTrackId: null,
+        actualIsPaused: true,
+        playbackErrorCode: null,
+        playbackError: null,
+        lastSyncedAt: DateTime.now(),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 160));
+
+    expect(controller.room!.playbackIntent.isNone, isTrue);
+    expect(controller.room!.nowPlayingTrackId, tracks[1].id);
+    expect(
+      controller.room!.queue.any((item) => item.track.id == tracks[2].id),
+      isTrue,
+    );
 
     controller.dispose();
     harness.dispose();

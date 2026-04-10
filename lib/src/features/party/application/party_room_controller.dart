@@ -35,7 +35,8 @@ class PartyRoomController extends ChangeNotifier {
              playbackOrchestrator: playbackOrchestrator,
            ) {
     _playbackOrchestrator.addListener(notifyListeners);
-    _spotifyConnectionController?.addListener(notifyListeners);
+    _previousPlaybackState = _spotifyConnectionController?.playbackState;
+    _spotifyConnectionController?.addListener(_handleSpotifyStateChanged);
   }
 
   final PartyRoomRepository _repository;
@@ -48,6 +49,8 @@ class PartyRoomController extends ChangeNotifier {
   PartyRoom? _room;
   String? _activeUserId;
   String? _error;
+  SpotifyPlaybackState? _previousPlaybackState;
+  String? _autoAdvanceHandledTrackId;
 
   PartyRoom? get room => _room;
   String? get activeUserId => _activeUserId;
@@ -400,6 +403,39 @@ class PartyRoomController extends ChangeNotifier {
     await _repository.saveRoom(updatedRoom);
   }
 
+  Future<bool> updateRoomSettings(RoomSettings settings) async {
+    final room = _currentRoomSnapshot();
+    if (room == null || !isHost) {
+      return false;
+    }
+
+    if (settings.maxParticipants < room.participantCount) {
+      _error =
+          'Teilnehmerlimit darf nicht unter den aktuellen Teilnehmern liegen.';
+      notifyListeners();
+      return false;
+    }
+    if (settings.maxQueuedTracksPerUser < 1) {
+      _error = 'Queue-Limit pro Nutzer muss mindestens 1 sein.';
+      notifyListeners();
+      return false;
+    }
+    if (settings.cooldownMinutes < 0) {
+      _error = 'Cooldown darf nicht negativ sein.';
+      notifyListeners();
+      return false;
+    }
+
+    _error = null;
+    final updatedRoom = room.copyWith(
+      settings: settings,
+      playbackErrorMessage: room.playbackErrorMessage,
+    );
+    _room = updatedRoom;
+    await _repository.saveRoom(updatedRoom);
+    return true;
+  }
+
   Future<void> closeRoom() async {
     final room = _currentRoomSnapshot();
     if (room == null || !isHost) {
@@ -446,8 +482,85 @@ class PartyRoomController extends ChangeNotifier {
     _roomSub?.cancel();
     _roomSub = _repository.watchRoom(code).listen((room) {
       _room = room;
+      if (room == null ||
+          room.nowPlayingTrackId != _autoAdvanceHandledTrackId) {
+        _autoAdvanceHandledTrackId = null;
+      }
       notifyListeners();
     });
+  }
+
+  void _handleSpotifyStateChanged() {
+    final nextPlaybackState = _spotifyConnectionController?.playbackState;
+    final previousPlaybackState = _previousPlaybackState;
+    _previousPlaybackState = nextPlaybackState;
+    if (nextPlaybackState != null && previousPlaybackState != null) {
+      unawaited(
+        _maybeAutoAdvanceAfterNaturalTrackEnd(
+          previousPlaybackState: previousPlaybackState,
+          nextPlaybackState: nextPlaybackState,
+        ),
+      );
+    }
+    notifyListeners();
+  }
+
+  Future<void> _maybeAutoAdvanceAfterNaturalTrackEnd({
+    required SpotifyPlaybackState previousPlaybackState,
+    required SpotifyPlaybackState nextPlaybackState,
+  }) async {
+    final room = _currentRoomSnapshot();
+    if (room == null || !isHost) {
+      return;
+    }
+
+    final currentTrackId = room.nowPlayingTrackId;
+    if (currentTrackId == null) {
+      return;
+    }
+    if (!room.playbackIntent.isNone) {
+      return;
+    }
+    if (_autoAdvanceHandledTrackId == currentTrackId) {
+      return;
+    }
+
+    final naturalEndDetected =
+        previousPlaybackState.actualNowPlayingTrackId == currentTrackId &&
+        !previousPlaybackState.actualIsPaused &&
+        previousPlaybackState.playbackErrorCode == null &&
+        nextPlaybackState.actualNowPlayingTrackId == null &&
+        nextPlaybackState.actualIsPaused &&
+        nextPlaybackState.playbackErrorCode == null &&
+        nextPlaybackState.hasSelectedDevice;
+    if (!naturalEndDetected) {
+      return;
+    }
+
+    _autoAdvanceHandledTrackId = currentTrackId;
+    final nextTrack = _nextPlayableQueueItemExcluding(room, currentTrackId);
+    if (nextTrack == null) {
+      final clearedRoom = room.copyWith(
+        playbackIntent: const RoomPlaybackIntent.none(),
+        desiredNowPlayingTrackId: null,
+        nowPlayingTrack: null,
+        nowPlayingTrackId: null,
+        isPaused: false,
+        playbackErrorMessage: null,
+      );
+      _room = clearedRoom;
+      await _repository.saveRoom(clearedRoom);
+      return;
+    }
+
+    final intentRoom = room.copyWith(
+      playbackIntent: RoomPlaybackIntent.playTrack(nextTrack.track.id),
+      playbackIntentVersion: _nextPlaybackIntentVersion(room),
+      desiredNowPlayingTrackId: nextTrack.track.id,
+      playbackErrorMessage: null,
+    );
+    _room = intentRoom;
+    await _repository.saveRoom(intentRoom);
   }
 
   bool _isTrackInCooldown(PartyRoom room, String trackId) {
@@ -470,12 +583,27 @@ class PartyRoomController extends ChangeNotifier {
     return room.playbackIntentVersion + 1;
   }
 
+  QueueItem? _nextPlayableQueueItemExcluding(
+    PartyRoom room,
+    String excludedTrackId,
+  ) {
+    for (final item in room.queue) {
+      if (item.track.id == excludedTrackId) {
+        continue;
+      }
+      if (!_isTrackInCooldown(room, item.track.id)) {
+        return item;
+      }
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _roomPlaybackIntentProcessor.dispose();
     _roomSub?.cancel();
     _playbackOrchestrator.removeListener(notifyListeners);
-    _spotifyConnectionController?.removeListener(notifyListeners);
+    _spotifyConnectionController?.removeListener(_handleSpotifyStateChanged);
     super.dispose();
   }
 }

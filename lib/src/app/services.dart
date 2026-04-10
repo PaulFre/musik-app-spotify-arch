@@ -1,3 +1,5 @@
+import 'package:party_queue_app/src/app/app_config.dart';
+import 'package:party_queue_app/src/app/app_join_link_service.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
 import 'package:party_queue_app/src/features/spotify/application/playback_orchestrator.dart';
 import 'package:party_queue_app/src/features/spotify/application/spotify_connection_controller.dart';
@@ -12,6 +14,8 @@ import 'package:party_queue_app/src/features/spotify/domain/spotify_playback_ser
 class Services {
   Services._();
 
+  static final AppConfig appConfig = AppConfig.fromEnvironment();
+  static final AppJoinLinkService appJoinLinkService = AppJoinLinkService();
   static final SpotifyAppConfig spotifyAppConfig =
       SpotifyAppConfig.fromEnvironment();
   static final PartyRoomRepository partyRoomRepository =
