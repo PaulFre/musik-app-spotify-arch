@@ -7,6 +7,7 @@ class SpotifyPlaybackState {
     this.availableDevices = const <SpotifyDevice>[],
     this.selectedDeviceId,
     this.actualNowPlayingTrackId,
+    this.actualProgressMs,
     this.actualIsPaused = true,
     this.lastCommand,
     this.playbackErrorCode,
@@ -18,6 +19,7 @@ class SpotifyPlaybackState {
   final List<SpotifyDevice> availableDevices;
   final String? selectedDeviceId;
   final String? actualNowPlayingTrackId;
+  final int? actualProgressMs;
   final bool actualIsPaused;
   final String? lastCommand;
   final String? playbackErrorCode;
@@ -31,6 +33,7 @@ class SpotifyPlaybackState {
     List<SpotifyDevice>? availableDevices,
     Object? selectedDeviceId = _unset,
     Object? actualNowPlayingTrackId = _unset,
+    Object? actualProgressMs = _unset,
     bool? actualIsPaused,
     Object? lastCommand = _unset,
     Object? playbackErrorCode = _unset,
@@ -46,6 +49,9 @@ class SpotifyPlaybackState {
       actualNowPlayingTrackId: actualNowPlayingTrackId == _unset
           ? this.actualNowPlayingTrackId
           : actualNowPlayingTrackId as String?,
+      actualProgressMs: actualProgressMs == _unset
+          ? this.actualProgressMs
+          : actualProgressMs as int?,
       actualIsPaused: actualIsPaused ?? this.actualIsPaused,
       lastCommand: lastCommand == _unset ? this.lastCommand : lastCommand as String?,
       playbackErrorCode: playbackErrorCode == _unset

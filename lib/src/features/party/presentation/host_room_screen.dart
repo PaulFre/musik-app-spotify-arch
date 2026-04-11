@@ -66,10 +66,6 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
   Future<void> _connectSpotify() async {
     await HostFlowResumeStore.markPendingHostSetup();
     await _spotifyController.connectHost();
-    if (!mounted) {
-      return;
-    }
-    await HostFlowResumeStore.consumePendingHostSetup();
   }
 
   Future<void> _createRoom() async {

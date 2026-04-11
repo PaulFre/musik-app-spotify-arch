@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
@@ -775,6 +777,137 @@ void main() {
   );
 
   test(
+    'loadSuggestions keeps filling across seed results until three suggestions exist',
+    () async {
+      final catalogService = MultiResultContextCatalogService();
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: catalogService,
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await controller.addTrack(
+        const SpotifyTrack(
+          id: 'queued-track',
+          uri: 'spotify:track:queued-track',
+          title: 'Window Shopper',
+          artist: '50 Cent',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final suggestions = await controller.loadSuggestions();
+
+      expect(suggestions, hasLength(3));
+      expect(suggestions.map((track) => track.id), <String>[
+        'suggestion-1',
+        'suggestion-2',
+        'fallback-1',
+      ]);
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test('loadSuggestions times out safely instead of hanging forever', () async {
+    final harness = await TestSpotifyHarness.ready(
+      catalogService: HangingSuggestionCatalogService(),
+    );
+    final controller = PartyRoomController(
+      repository: InMemoryPartyRoomRepository(),
+      catalogService: harness.catalogService,
+      playbackOrchestrator: harness.playbackOrchestrator,
+      spotifyConnectionController: harness.connectionController,
+      suggestionLoadTimeout: const Duration(milliseconds: 10),
+    );
+
+    await controller.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    await controller.addTrack(
+      const SpotifyTrack(
+        id: 'queued-track',
+        uri: 'spotify:track:queued-track',
+        title: 'Window Shopper',
+        artist: '50 Cent',
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final suggestions = await controller.loadSuggestions();
+
+    expect(suggestions, isEmpty);
+
+    controller.dispose();
+    harness.dispose();
+  });
+
+  test(
+    'loadSuggestions skips a hanging seed request and still returns later suggestions',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: HangingSeedThenWorkingCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+        suggestionLoadTimeout: const Duration(milliseconds: 10),
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await controller.addTrack(
+        const SpotifyTrack(
+          id: 'queued-track',
+          uri: 'spotify:track:queued-track',
+          title: 'Window Shopper',
+          artist: '50 Cent',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final suggestions = await controller.loadSuggestions();
+
+      expect(suggestions, hasLength(3));
+      expect(
+        suggestions.map((track) => track.id),
+        <String>['suggestion-1', 'suggestion-2', 'fallback-1'],
+      );
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test(
     'natural song end auto-advances exactly once to the next playable track',
     () async {
       final harness = await TestSpotifyHarness.ready(
@@ -823,6 +956,57 @@ void main() {
         controller.room!.queue.any((item) => item.track.id == tracks[2].id),
         isTrue,
       );
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test(
+    'natural song end with progress reset on same track auto-advances',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(cooldownMinutes: 15),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final tracks = await controller.search('');
+      await controller.addTrack(tracks[0]);
+      await controller.addTrack(tracks[1]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      await controller.playTopSong();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      harness.connectionController.applyPlaybackState(
+        harness.connectionController.playbackState.copyWith(
+          actualNowPlayingTrackId: tracks[0].id,
+          actualProgressMs: 0,
+          actualIsPaused: true,
+          playbackErrorCode: null,
+          playbackError: null,
+          lastSyncedAt: DateTime.now(),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(controller.room!.playbackIntent.isNone, isTrue);
+      expect(controller.room!.nowPlayingTrackId, tracks[1].id);
 
       controller.dispose();
       harness.dispose();
@@ -908,6 +1092,7 @@ void main() {
     harness.connectionController.applyPlaybackState(
       harness.connectionController.playbackState.copyWith(
         actualNowPlayingTrackId: tracks[0].id,
+        actualProgressMs: 0,
         actualIsPaused: true,
         playbackErrorCode: null,
         playbackError: null,
@@ -1128,6 +1313,7 @@ class SlowFakeSpotifyPlaybackService implements SpotifyPlaybackService {
     await Future<void>.delayed(playDelay);
     _state = _state.copyWith(
       actualNowPlayingTrackId: track.id,
+      actualProgressMs: 0,
       actualIsPaused: false,
       lastCommand: 'play',
       playbackErrorCode: null,
@@ -1254,5 +1440,132 @@ class ContextAwareCatalogService implements SpotifyCatalogService {
       ];
     }
     return const <SpotifyTrack>[];
+  }
+}
+
+class MultiResultContextCatalogService implements SpotifyCatalogService {
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return const <SpotifyTrack>[
+      SpotifyTrack(
+        id: 'fallback-1',
+        uri: 'spotify:track:fallback-1',
+        title: 'Fallback 1',
+        artist: 'Fallback Artist',
+      ),
+      SpotifyTrack(
+        id: 'fallback-2',
+        uri: 'spotify:track:fallback-2',
+        title: 'Fallback 2',
+        artist: 'Fallback Artist',
+      ),
+      SpotifyTrack(
+        id: 'fallback-3',
+        uri: 'spotify:track:fallback-3',
+        title: 'Fallback 3',
+        artist: 'Fallback Artist',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<SpotifyTrack>> searchTracks(String query) async {
+    if (query == '50 Cent') {
+      return const <SpotifyTrack>[
+        SpotifyTrack(
+          id: 'queued-track',
+          uri: 'spotify:track:queued-track',
+          title: 'Window Shopper',
+          artist: '50 Cent',
+        ),
+        SpotifyTrack(
+          id: 'suggestion-1',
+          uri: 'spotify:track:suggestion-1',
+          title: 'In Da Club',
+          artist: '50 Cent',
+        ),
+        SpotifyTrack(
+          id: 'suggestion-2',
+          uri: 'spotify:track:suggestion-2',
+          title: 'Candy Shop',
+          artist: '50 Cent',
+        ),
+      ];
+    }
+    if (query == 'Window Shopper') {
+      return const <SpotifyTrack>[
+        SpotifyTrack(
+          id: 'queued-track',
+          uri: 'spotify:track:queued-track',
+          title: 'Window Shopper',
+          artist: '50 Cent',
+        ),
+      ];
+    }
+    return const <SpotifyTrack>[];
+  }
+}
+
+class HangingSuggestionCatalogService implements SpotifyCatalogService {
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() {
+    return Completer<List<SpotifyTrack>>().future;
+  }
+
+  @override
+  Future<List<SpotifyTrack>> searchTracks(String query) {
+    return Completer<List<SpotifyTrack>>().future;
+  }
+}
+
+class HangingSeedThenWorkingCatalogService implements SpotifyCatalogService {
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return const <SpotifyTrack>[
+      SpotifyTrack(
+        id: 'fallback-1',
+        uri: 'spotify:track:fallback-1',
+        title: 'Fallback 1',
+        artist: 'Fallback Artist',
+      ),
+      SpotifyTrack(
+        id: 'fallback-2',
+        uri: 'spotify:track:fallback-2',
+        title: 'Fallback 2',
+        artist: 'Fallback Artist',
+      ),
+      SpotifyTrack(
+        id: 'fallback-3',
+        uri: 'spotify:track:fallback-3',
+        title: 'Fallback 3',
+        artist: 'Fallback Artist',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<SpotifyTrack>> searchTracks(String query) {
+    if (query == '50 Cent') {
+      return Completer<List<SpotifyTrack>>().future;
+    }
+    if (query == 'Window Shopper') {
+      return Future<List<SpotifyTrack>>.value(
+        const <SpotifyTrack>[
+          SpotifyTrack(
+            id: 'suggestion-1',
+            uri: 'spotify:track:suggestion-1',
+            title: 'In Da Club',
+            artist: '50 Cent',
+          ),
+          SpotifyTrack(
+            id: 'suggestion-2',
+            uri: 'spotify:track:suggestion-2',
+            title: 'Candy Shop',
+            artist: '50 Cent',
+          ),
+        ],
+      );
+    }
+    return Future<List<SpotifyTrack>>.value(const <SpotifyTrack>[]);
   }
 }

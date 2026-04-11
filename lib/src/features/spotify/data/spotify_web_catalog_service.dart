@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
 import 'package:party_queue_app/src/features/spotify/data/spotify_app_config.dart';
@@ -19,41 +21,68 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
     required SpotifyAppConfig config,
     required SpotifyAuthService authService,
     http.Client? httpClient,
+    Duration requestTimeout = const Duration(seconds: 5),
   }) : _config = config,
        _authService = authService,
-       _httpClient = httpClient ?? http.Client();
+       _httpClient = httpClient ?? http.Client(),
+       _requestTimeout = requestTimeout;
 
   final SpotifyAppConfig _config;
   final SpotifyAuthService _authService;
   final http.Client _httpClient;
+  final Duration _requestTimeout;
+
+  void _logSuggestions(String message) {
+    debugPrint('[Suggestions][Catalog] $message');
+  }
 
   @override
   Future<List<SpotifyTrack>> searchTracks(String query) async {
     final normalized = query.trim();
+    _logSuggestions('searchTracks start query="$normalized"');
     if (normalized.isEmpty) {
+      _logSuggestions('searchTracks short-circuit blank query');
       return const <SpotifyTrack>[];
     }
 
     final accessToken = await _authService.getValidAccessToken();
     if (accessToken == null) {
+      _logSuggestions('searchTracks no access token query="$normalized"');
       return const <SpotifyTrack>[];
     }
 
-    final response = await _httpClient.get(
-      Uri.parse('${_config.apiBaseUrl}/search').replace(
-        queryParameters: <String, String>{
-          'q': normalized,
-          'type': 'track',
-          'limit': '10',
-          'market': 'from_token',
-        },
-      ),
-      headers: <String, String>{
-        'Authorization': 'Bearer $accessToken',
-      },
+    http.Response response;
+    try {
+      _logSuggestions('searchTracks request query="$normalized"');
+      response = await _httpClient
+          .get(
+            Uri.parse('${_config.apiBaseUrl}/search').replace(
+              queryParameters: <String, String>{
+                'q': normalized,
+                'type': 'track',
+                'limit': '10',
+                'market': 'from_token',
+              },
+            ),
+            headers: <String, String>{
+              'Authorization': 'Bearer $accessToken',
+            },
+          )
+          .timeout(_requestTimeout);
+    } on TimeoutException {
+      _logSuggestions('searchTracks timeout query="$normalized"');
+      return const <SpotifyTrack>[];
+    } catch (_) {
+      _logSuggestions('searchTracks catch query="$normalized"');
+      return const <SpotifyTrack>[];
+    }
+
+    _logSuggestions(
+      'searchTracks response query="$normalized" status=${response.statusCode}',
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      _logSuggestions('searchTracks non-2xx query="$normalized"');
       return const <SpotifyTrack>[];
     }
 
@@ -61,11 +90,15 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
     final tracksPayload = payload['tracks'] as Map<String, dynamic>?;
     final items = tracksPayload?['items'] as List<dynamic>? ?? const <dynamic>[];
 
-    return items
+    final results = items
         .whereType<Map<String, dynamic>>()
         .map(_toSpotifyTrack)
         .whereType<SpotifyTrack>()
         .toList();
+    _logSuggestions(
+      'searchTracks end query="$normalized" mapped=${results.length}',
+    );
+    return results;
   }
 
   @override

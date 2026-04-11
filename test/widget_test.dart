@@ -13,6 +13,7 @@ void main() {
 
   testWidgets('shows home screen actions', (WidgetTester tester) async {
     await tester.pumpWidget(const PartyQueueApp());
+    await tester.pump();
     expect(find.text('Raum hosten'), findsOneWidget);
     expect(find.text('Raum beitreten'), findsOneWidget);
   });
@@ -24,10 +25,15 @@ void main() {
 
     await tester.pumpWidget(const PartyQueueApp());
     await tester.pump();
+    expect(find.text('Raum hosten'), findsNothing);
+    expect(find.text('Raum beitreten'), findsNothing);
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pumpAndSettle();
 
     expect(find.byType(HostRoomScreen), findsOneWidget);
     expect(find.text('Spotify-Host Setup'), findsOneWidget);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('party.host_setup.pending_resume'), isNull);
   });
 }

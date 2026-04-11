@@ -24,10 +24,12 @@ class PartyRoomController extends ChangeNotifier {
     required PlaybackOrchestrator playbackOrchestrator,
     SpotifyConnectionController? spotifyConnectionController,
     RoomPlaybackIntentProcessor? roomPlaybackIntentProcessor,
+    Duration suggestionLoadTimeout = const Duration(seconds: 5),
   }) : _repository = repository,
        _catalogService = catalogService,
        _playbackOrchestrator = playbackOrchestrator,
        _spotifyConnectionController = spotifyConnectionController,
+       _suggestionLoadTimeout = suggestionLoadTimeout,
        _roomPlaybackIntentProcessor =
            roomPlaybackIntentProcessor ??
            RoomPlaybackIntentProcessor(
@@ -43,6 +45,7 @@ class PartyRoomController extends ChangeNotifier {
   final SpotifyCatalogService _catalogService;
   final PlaybackOrchestrator _playbackOrchestrator;
   final SpotifyConnectionController? _spotifyConnectionController;
+  final Duration _suggestionLoadTimeout;
   final RoomPlaybackIntentProcessor _roomPlaybackIntentProcessor;
   StreamSubscription<PartyRoom?>? _roomSub;
 
@@ -51,6 +54,10 @@ class PartyRoomController extends ChangeNotifier {
   String? _error;
   SpotifyPlaybackState? _previousPlaybackState;
   String? _autoAdvanceHandledTrackId;
+
+  void _logSuggestions(String message) {
+    debugPrint('[Suggestions][Controller] $message');
+  }
 
   PartyRoom? get room => _room;
   String? get activeUserId => _activeUserId;
@@ -144,9 +151,27 @@ class PartyRoomController extends ChangeNotifier {
   }
 
   Future<List<SpotifyTrack>> loadSuggestions() async {
+    _logSuggestions('loadSuggestions start');
+    try {
+      final suggestions = await _loadSuggestionsInternal().timeout(
+        _suggestionLoadTimeout,
+      );
+      _logSuggestions('loadSuggestions end count=${suggestions.length}');
+      return suggestions;
+    } on TimeoutException {
+      _logSuggestions('loadSuggestions timeout after $_suggestionLoadTimeout');
+      return const <SpotifyTrack>[];
+    } catch (_) {
+      _logSuggestions('loadSuggestions catch');
+      return const <SpotifyTrack>[];
+    }
+  }
+
+  Future<List<SpotifyTrack>> _loadSuggestionsInternal() async {
     final room = _currentRoomSnapshot();
     if (room == null) {
-      return _catalogService.loadSuggestions();
+      _logSuggestions('_loadSuggestionsInternal no-room -> fallback');
+      return _safeLoadFallbackSuggestions();
     }
 
     final excludedTrackIds = <String>{
@@ -172,10 +197,16 @@ class PartyRoomController extends ChangeNotifier {
       addSeed(item.track.title);
     }
 
+    _logSuggestions(
+      '_loadSuggestionsInternal excluded=${excludedTrackIds.join(",")} seeds=${seedQueries.join(" | ")}',
+    );
+
     final suggestions = <SpotifyTrack>[];
     final seenTrackIds = <String>{};
     for (final seed in seedQueries) {
-      final results = await _catalogService.searchTracks(seed);
+      _logSuggestions('seed start "$seed"');
+      final results = await _safeSearchSuggestionSeed(seed);
+      _logSuggestions('seed end "$seed" results=${results.length}');
       for (final track in results) {
         if (excludedTrackIds.contains(track.id)) {
           continue;
@@ -184,15 +215,17 @@ class PartyRoomController extends ChangeNotifier {
           continue;
         }
         suggestions.add(track);
-        break;
-      }
-      if (suggestions.length == 3) {
-        return suggestions;
+        if (suggestions.length == 3) {
+          _logSuggestions('seed loop filled suggestions -> return 3');
+          return suggestions;
+        }
       }
     }
 
     if (suggestions.length < 3) {
-      final fallback = await _catalogService.loadSuggestions();
+      _logSuggestions('fallback start currentCount=${suggestions.length}');
+      final fallback = await _safeLoadFallbackSuggestions();
+      _logSuggestions('fallback end results=${fallback.length}');
       for (final track in fallback) {
         if (excludedTrackIds.contains(track.id)) {
           continue;
@@ -207,7 +240,46 @@ class PartyRoomController extends ChangeNotifier {
       }
     }
 
+    _logSuggestions(
+      '_loadSuggestionsInternal return finalCount=${suggestions.length}',
+    );
     return suggestions.take(3).toList();
+  }
+
+  Future<List<SpotifyTrack>> _safeSearchSuggestionSeed(String seed) async {
+    try {
+      final results = await _catalogService
+          .searchTracks(seed)
+          .timeout(_suggestionLoadTimeout);
+      _logSuggestions(
+        '_safeSearchSuggestionSeed success "$seed" count=${results.length}',
+      );
+      return results;
+    } on TimeoutException {
+      _logSuggestions('_safeSearchSuggestionSeed timeout "$seed"');
+      return const <SpotifyTrack>[];
+    } catch (_) {
+      _logSuggestions('_safeSearchSuggestionSeed catch "$seed"');
+      return const <SpotifyTrack>[];
+    }
+  }
+
+  Future<List<SpotifyTrack>> _safeLoadFallbackSuggestions() async {
+    try {
+      final results = await _catalogService
+          .loadSuggestions()
+          .timeout(_suggestionLoadTimeout);
+      _logSuggestions(
+        '_safeLoadFallbackSuggestions success count=${results.length}',
+      );
+      return results;
+    } on TimeoutException {
+      _logSuggestions('_safeLoadFallbackSuggestions timeout');
+      return const <SpotifyTrack>[];
+    } catch (_) {
+      _logSuggestions('_safeLoadFallbackSuggestions catch');
+      return const <SpotifyTrack>[];
+    }
   }
 
   Future<void> addTrack(SpotifyTrack track) async {
@@ -529,10 +601,14 @@ class PartyRoomController extends ChangeNotifier {
         previousPlaybackState.actualNowPlayingTrackId == currentTrackId &&
         !previousPlaybackState.actualIsPaused &&
         previousPlaybackState.playbackErrorCode == null &&
-        nextPlaybackState.actualNowPlayingTrackId == null &&
         nextPlaybackState.actualIsPaused &&
         nextPlaybackState.playbackErrorCode == null &&
-        nextPlaybackState.hasSelectedDevice;
+        nextPlaybackState.hasSelectedDevice &&
+        _looksLikeNaturalTrackEnd(
+          currentTrackId: currentTrackId,
+          previousPlaybackState: previousPlaybackState,
+          nextPlaybackState: nextPlaybackState,
+        );
     if (!naturalEndDetected) {
       return;
     }
@@ -561,6 +637,28 @@ class PartyRoomController extends ChangeNotifier {
     );
     _room = intentRoom;
     await _repository.saveRoom(intentRoom);
+  }
+
+  bool _looksLikeNaturalTrackEnd({
+    required String currentTrackId,
+    required SpotifyPlaybackState previousPlaybackState,
+    required SpotifyPlaybackState nextPlaybackState,
+  }) {
+    if (nextPlaybackState.actualNowPlayingTrackId == null) {
+      return true;
+    }
+
+    if (nextPlaybackState.actualNowPlayingTrackId != currentTrackId) {
+      return false;
+    }
+
+    final previousProgressMs = previousPlaybackState.actualProgressMs;
+    final nextProgressMs = nextPlaybackState.actualProgressMs;
+    if (previousProgressMs == null || nextProgressMs == null) {
+      return false;
+    }
+
+    return nextProgressMs < previousProgressMs;
   }
 
   bool _isTrackInCooldown(PartyRoom room, String trackId) {

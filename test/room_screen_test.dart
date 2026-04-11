@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
+import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/presentation/room_screen.dart';
 import 'package:party_queue_app/src/features/spotify/application/playback_orchestrator.dart';
@@ -263,6 +266,120 @@ void main() {
     playbackOrchestrator.dispose();
     connectionController.dispose();
   });
+
+  testWidgets(
+    'suggestions recover after a stale reload and do not stay in loading state',
+    (WidgetTester tester) async {
+      final repository = InMemoryPartyRoomRepository();
+      final connectionController = SpotifyConnectionController(
+        authService: FakeSpotifyAuthService(),
+        playbackService: FakeSpotifyPlaybackService(),
+      );
+      final playbackOrchestrator = PlaybackOrchestrator(
+        connectionController: connectionController,
+      );
+      final catalogService = DelayedSuggestionCatalogService();
+      final controller = PartyRoomController(
+        repository: repository,
+        catalogService: catalogService,
+        playbackOrchestrator: playbackOrchestrator,
+        spotifyConnectionController: connectionController,
+        roomPlaybackIntentProcessor: _NoopRoomPlaybackIntentProcessor(
+          repository: repository,
+          playbackOrchestrator: playbackOrchestrator,
+        ),
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(home: RoomScreen(controller: controller)),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, 'abc');
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      catalogService.completeFirstLoad();
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextField).first, '');
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
+
+      expect(
+        find.text('Keine addbaren Spotify-Treffer gefunden.'),
+        findsNothing,
+      );
+      expect(find.text('Recovered 1'), findsOneWidget);
+      expect(find.text('Recovered 2'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      controller.dispose();
+      await repository.dispose();
+      playbackOrchestrator.dispose();
+      connectionController.dispose();
+    },
+  );
+
+  testWidgets(
+    'suggestion reload after context change is scheduled after build',
+    (WidgetTester tester) async {
+      final repository = InMemoryPartyRoomRepository();
+      final connectionController = SpotifyConnectionController(
+        authService: FakeSpotifyAuthService(),
+        playbackService: FakeSpotifyPlaybackService(),
+      );
+      final playbackOrchestrator = PlaybackOrchestrator(
+        connectionController: connectionController,
+      );
+      final controller = PartyRoomController(
+        repository: repository,
+        catalogService: FakeSpotifyCatalogService(),
+        playbackOrchestrator: playbackOrchestrator,
+        spotifyConnectionController: connectionController,
+        roomPlaybackIntentProcessor: _NoopRoomPlaybackIntentProcessor(
+          repository: repository,
+          playbackOrchestrator: playbackOrchestrator,
+        ),
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+        settings: const RoomSettings(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(home: RoomScreen(controller: controller)),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final track = (await controller.search('')).first;
+      await controller.addTrack(track);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      controller.dispose();
+      await repository.dispose();
+      playbackOrchestrator.dispose();
+      connectionController.dispose();
+    },
+  );
 }
 
 class _NoopRoomPlaybackIntentProcessor extends RoomPlaybackIntentProcessor {
@@ -279,4 +396,57 @@ class _NoopRoomPlaybackIntentProcessor extends RoomPlaybackIntentProcessor {
 
   @override
   void dispose() {}
+}
+
+class DelayedSuggestionCatalogService implements SpotifyCatalogService {
+  final Completer<List<SpotifyTrack>> _firstLoadCompleter =
+      Completer<List<SpotifyTrack>>();
+  int _loadSuggestionsCallCount = 0;
+
+  void completeFirstLoad() {
+    if (_firstLoadCompleter.isCompleted) {
+      return;
+    }
+    _firstLoadCompleter.complete(const <SpotifyTrack>[
+      SpotifyTrack(
+        id: 'initial-1',
+        uri: 'spotify:track:initial-1',
+        title: 'Initial 1',
+        artist: 'Artist Initial',
+      ),
+    ]);
+  }
+
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() {
+    _loadSuggestionsCallCount += 1;
+    if (_loadSuggestionsCallCount == 1) {
+      return _firstLoadCompleter.future;
+    }
+    return Future<List<SpotifyTrack>>.value(const <SpotifyTrack>[
+      SpotifyTrack(
+        id: 'recovered-1',
+        uri: 'spotify:track:recovered-1',
+        title: 'Recovered 1',
+        artist: 'Artist Recovered',
+      ),
+      SpotifyTrack(
+        id: 'recovered-2',
+        uri: 'spotify:track:recovered-2',
+        title: 'Recovered 2',
+        artist: 'Artist Recovered',
+      ),
+      SpotifyTrack(
+        id: 'recovered-3',
+        uri: 'spotify:track:recovered-3',
+        title: 'Recovered 3',
+        artist: 'Artist Recovered',
+      ),
+    ]);
+  }
+
+  @override
+  Future<List<SpotifyTrack>> searchTracks(String query) async {
+    return const <SpotifyTrack>[];
+  }
 }

@@ -32,6 +32,36 @@ class _RoomScreenState extends State<RoomScreen> {
   List<SpotifyTrack> _suggestions = const <SpotifyTrack>[];
   bool _isLoadingSuggestions = false;
   String? _lastSuggestionContext;
+  int _suggestionsRequestId = 0;
+  String? _scheduledSuggestionContext;
+
+  void _logSuggestions(String message) {
+    debugPrint('[Suggestions][RoomScreen] $message');
+  }
+
+  void _scheduleSuggestionsReload(String suggestionContext) {
+    if (_scheduledSuggestionContext == suggestionContext) {
+      _logSuggestions(
+        'schedule reload skipped already-scheduled context=$suggestionContext',
+      );
+      return;
+    }
+    _scheduledSuggestionContext = suggestionContext;
+    _logSuggestions('schedule reload post-frame context=$suggestionContext');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_scheduledSuggestionContext != suggestionContext) {
+        _logSuggestions(
+          'scheduled reload dropped stale context=$suggestionContext currentScheduled=$_scheduledSuggestionContext',
+        );
+        return;
+      }
+      _scheduledSuggestionContext = null;
+      unawaited(_loadSuggestions());
+    });
+  }
 
   Future<void> _handleHostMenuAction(_HostMenuAction action) async {
     switch (action) {
@@ -118,6 +148,7 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 
   Future<void> _loadSuggestions() async {
+    final requestId = ++_suggestionsRequestId;
     final room = widget.controller.room;
     final suggestionContext = room == null
         ? null
@@ -125,18 +156,61 @@ class _RoomScreenState extends State<RoomScreen> {
             room.nowPlayingTrackId ?? '',
             ...room.queue.map((item) => item.track.id),
           ].join('|');
-    setState(() {
-      _isLoadingSuggestions = true;
-    });
-    final suggestions = await widget.controller.loadSuggestions();
-    if (!mounted || _query.trim().isNotEmpty) {
-      return;
+    _logSuggestions(
+      '_loadSuggestions start requestId=$requestId context=$suggestionContext query="${_query.trim()}"',
+    );
+    if (mounted) {
+      setState(() {
+        _isLoadingSuggestions = true;
+      });
+      _logSuggestions(
+        '_isLoadingSuggestions=true requestId=$requestId context=$suggestionContext',
+      );
     }
-    setState(() {
-      _isLoadingSuggestions = false;
-      _suggestions = suggestions.take(3).toList();
-      _lastSuggestionContext = suggestionContext;
-    });
+    try {
+      final suggestions = await widget.controller.loadSuggestions();
+      _logSuggestions(
+        '_loadSuggestions returned requestId=$requestId count=${suggestions.length} currentQuery="${_query.trim()}" currentRequestId=$_suggestionsRequestId',
+      );
+      if (!mounted || requestId != _suggestionsRequestId) {
+        _logSuggestions(
+          '_loadSuggestions stale-or-unmounted requestId=$requestId mounted=$mounted currentRequestId=$_suggestionsRequestId',
+        );
+        return;
+      }
+      if (_query.trim().isNotEmpty) {
+        setState(() {
+          _isLoadingSuggestions = false;
+          _lastSuggestionContext = suggestionContext;
+        });
+        _logSuggestions(
+          '_loadSuggestions aborted-by-query requestId=$requestId set loading=false lastContext=$suggestionContext',
+        );
+        return;
+      }
+      setState(() {
+        _isLoadingSuggestions = false;
+        _suggestions = suggestions.take(3).toList();
+        _lastSuggestionContext = suggestionContext;
+      });
+      _logSuggestions(
+        '_loadSuggestions success requestId=$requestId set loading=false lastContext=$suggestionContext visibleCount=${_suggestions.length}',
+      );
+    } catch (_) {
+      if (!mounted || requestId != _suggestionsRequestId) {
+        _logSuggestions(
+          '_loadSuggestions catch-stale-or-unmounted requestId=$requestId mounted=$mounted currentRequestId=$_suggestionsRequestId',
+        );
+        return;
+      }
+      setState(() {
+        _isLoadingSuggestions = false;
+        _lastSuggestionContext = suggestionContext;
+      });
+      _logSuggestions(
+        '_loadSuggestions catch requestId=$requestId set loading=false lastContext=$suggestionContext',
+      );
+    }
   }
 
   Future<void> _performSearch(String rawQuery) async {
@@ -223,7 +297,10 @@ class _RoomScreenState extends State<RoomScreen> {
         if (_query.trim().isEmpty &&
             !_isLoadingSuggestions &&
             _lastSuggestionContext != currentSuggestionContext) {
-          unawaited(_loadSuggestions());
+          _logSuggestions(
+            'build-trigger reload currentContext=$currentSuggestionContext lastContext=$_lastSuggestionContext loading=$_isLoadingSuggestions query="${_query.trim()}"',
+          );
+          _scheduleSuggestionsReload(currentSuggestionContext);
         }
 
         return Scaffold(

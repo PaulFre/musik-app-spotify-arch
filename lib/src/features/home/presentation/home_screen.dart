@@ -37,8 +37,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) {
       return;
     }
-    _pendingHostResumeChecked = true;
-    _pendingHostResume = pending;
+    setState(() {
+      _pendingHostResumeChecked = true;
+      _pendingHostResume = pending;
+    });
     _maybeRestoreHostFlow();
   }
 
@@ -69,6 +71,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_pendingHostResumeChecked ||
+        (_pendingHostResume && !_hostFlowRestored)) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Party Queue')),
       body: Center(
