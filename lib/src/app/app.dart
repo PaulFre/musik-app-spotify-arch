@@ -25,6 +25,7 @@ class _PartyQueueAppState extends State<PartyQueueApp> {
   @override
   void initState() {
     super.initState();
+    unawaited(_settingsController.restore());
     unawaited(Services.spotifyConnectionController.restoreSession());
     _joinLinkSub = Services.appJoinLinkService.joinInputStream.listen(
       _routeToJoinFlow,
@@ -76,6 +77,7 @@ class _PartyQueueAppState extends State<PartyQueueApp> {
         animation: _settingsController,
         builder: (context, _) {
           return MaterialApp(
+            key: ValueKey<String>(_settingsController.locale.languageCode),
             navigatorKey: _navigatorKey,
             title: 'Party Queue',
             locale: _settingsController.locale,

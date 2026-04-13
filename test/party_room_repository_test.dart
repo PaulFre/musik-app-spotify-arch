@@ -34,4 +34,33 @@ void main() {
       ),
     );
   });
+
+  test('watchPublicRooms only emits open public rooms', () async {
+    final publicRoom = PartyRoom(
+      code: 'PUB123',
+      hostUserId: 'host-public',
+      settings: const RoomSettings(isPublic: true),
+      createdAt: DateTime(2026, 4, 9, 12),
+    );
+    final privateRoom = PartyRoom(
+      code: 'PRV123',
+      hostUserId: 'host-private',
+      settings: const RoomSettings(isPublic: false, roomPassword: 'secret123'),
+      createdAt: DateTime(2026, 4, 9, 13),
+    );
+
+    await repository.saveRoom(publicRoom);
+    await repository.saveRoom(privateRoom);
+
+    await expectLater(
+      repository.watchPublicRooms(),
+      emits(
+        predicate((value) {
+          return value is List<PartyRoom> &&
+              value.length == 1 &&
+              value.single.code == 'PUB123';
+        }),
+      ),
+    );
+  });
 }

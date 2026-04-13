@@ -20,6 +20,7 @@ class PartyRoom {
     this.playbackIntentVersion = 0,
     this.nowPlayingTrack,
     this.nowPlayingTrackId,
+    this.nowPlayingAddedByUserId,
     this.isPaused = false,
     this.playbackErrorMessage,
     this.closedAt,
@@ -39,6 +40,7 @@ class PartyRoom {
   final int playbackIntentVersion;
   final SpotifyTrack? nowPlayingTrack;
   final String? nowPlayingTrackId;
+  final String? nowPlayingAddedByUserId;
   final bool isPaused;
   final String? playbackErrorMessage;
   final DateTime? closedAt;
@@ -59,6 +61,7 @@ class PartyRoom {
     int? playbackIntentVersion,
     Object? nowPlayingTrack = _unset,
     Object? nowPlayingTrackId = _unset,
+    Object? nowPlayingAddedByUserId = _unset,
     bool? isPaused,
     Object? playbackErrorMessage = _unset,
     Object? closedAt = _unset,
@@ -86,6 +89,9 @@ class PartyRoom {
       nowPlayingTrackId: nowPlayingTrackId == _unset
           ? this.nowPlayingTrackId
           : nowPlayingTrackId as String?,
+      nowPlayingAddedByUserId: nowPlayingAddedByUserId == _unset
+          ? this.nowPlayingAddedByUserId
+          : nowPlayingAddedByUserId as String?,
       isPaused: isPaused ?? this.isPaused,
       playbackErrorMessage: playbackErrorMessage == _unset
           ? this.playbackErrorMessage

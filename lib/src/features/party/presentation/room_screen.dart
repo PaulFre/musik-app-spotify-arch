@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:party_queue_app/src/app/app_strings.dart';
 import 'package:party_queue_app/src/app/services.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/domain/room_invite_link_builder.dart';
@@ -25,9 +26,11 @@ class RoomScreen extends StatefulWidget {
 class _RoomScreenState extends State<RoomScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
+  Timer? _playbackProgressTicker;
   String _query = '';
   bool _isSearching = false;
   String? _searchError;
+  String? _searchNotice;
   List<SpotifyTrack> _searchResults = const <SpotifyTrack>[];
   List<SpotifyTrack> _suggestions = const <SpotifyTrack>[];
   bool _isLoadingSuggestions = false;
@@ -137,14 +140,50 @@ class _RoomScreenState extends State<RoomScreen> {
   @override
   void initState() {
     super.initState();
+    _playbackProgressTicker = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) {
+        if (!mounted) {
+          return;
+        }
+        final playbackState = widget.controller.playbackState;
+        if (playbackState.actualProgressMs == null ||
+            playbackState.lastSyncedAt == null ||
+            playbackState.actualIsPaused) {
+          return;
+        }
+        setState(() {});
+      },
+    );
     unawaited(_loadSuggestions());
   }
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _playbackProgressTicker?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  int? _displayProgressMs() {
+    final playbackState = widget.controller.playbackState;
+    final confirmedProgressMs = playbackState.actualProgressMs;
+    if (confirmedProgressMs == null) {
+      return null;
+    }
+    final syncTime = playbackState.lastSyncedAt;
+    if (syncTime == null || playbackState.actualIsPaused) {
+      return confirmedProgressMs;
+    }
+    final elapsedMs = DateTime.now().difference(syncTime).inMilliseconds;
+    final nextProgressMs =
+        confirmedProgressMs + (elapsedMs < 0 ? 0 : elapsedMs);
+    final durationMs = playbackState.actualDurationMs;
+    if (durationMs == null || durationMs <= 0) {
+      return nextProgressMs;
+    }
+    return nextProgressMs.clamp(0, durationMs);
   }
 
   Future<void> _loadSuggestions() async {
@@ -214,12 +253,14 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 
   Future<void> _performSearch(String rawQuery) async {
+    final strings = context.strings;
     final query = rawQuery.trim();
     if (query.isEmpty) {
       setState(() {
         _query = rawQuery;
         _isSearching = false;
         _searchError = null;
+        _searchNotice = null;
         _searchResults = const <SpotifyTrack>[];
       });
       unawaited(_loadSuggestions());
@@ -229,19 +270,23 @@ class _RoomScreenState extends State<RoomScreen> {
       _query = rawQuery;
       _isSearching = true;
       _searchError = null;
+      _searchNotice = null;
       _suggestions = const <SpotifyTrack>[];
     });
 
     final tracks = await widget.controller.search(query);
+    final shouldWarnAboutExcludedArtist = widget.controller
+        .isExplicitExcludedArtistQuery(query);
     if (!mounted || _query.trim() != query) {
       return;
     }
     setState(() {
       _isSearching = false;
       _searchResults = tracks;
-      _searchError = tracks.isEmpty
-          ? 'Keine addbaren Spotify-Treffer gefunden.'
+      _searchNotice = shouldWarnAboutExcludedArtist
+          ? strings.excludedArtistWarning
           : null;
+      _searchError = tracks.isEmpty ? strings.noAddableResults : null;
     });
   }
 
@@ -271,6 +316,7 @@ class _RoomScreenState extends State<RoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
@@ -283,10 +329,8 @@ class _RoomScreenState extends State<RoomScreen> {
 
         if (room.isClosed) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Raum geschlossen')),
-            body: const Center(
-              child: Text('Der Host hat den Raum geschlossen.'),
-            ),
+            appBar: AppBar(title: Text(strings.roomClosed)),
+            body: Center(child: Text(strings.roomClosedMessage)),
           );
         }
 
@@ -305,34 +349,34 @@ class _RoomScreenState extends State<RoomScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text('Raum ${room.code}'),
+            title: Text(strings.roomTitle(room.code)),
             actions: [
               if (widget.controller.isHost)
                 PopupMenuButton<_HostMenuAction>(
-                  tooltip: 'Host-Menue',
+                  tooltip: strings.hostMenu,
                   onSelected: (action) =>
                       unawaited(_handleHostMenuAction(action)),
-                  itemBuilder: (context) => const [
+                  itemBuilder: (context) => [
                     PopupMenuItem<_HostMenuAction>(
                       value: _HostMenuAction.invite,
-                      child: Text('Einladen'),
+                      child: Text(strings.invite),
                     ),
                     PopupMenuItem<_HostMenuAction>(
                       value: _HostMenuAction.exportPlaylist,
-                      child: Text('Playlist exportieren'),
+                      child: Text(strings.exportPlaylist),
                     ),
                     PopupMenuItem<_HostMenuAction>(
                       value: _HostMenuAction.guests,
-                      child: Text('Gaeste'),
+                      child: Text(strings.guests),
                     ),
                     PopupMenuItem<_HostMenuAction>(
                       value: _HostMenuAction.settings,
-                      child: Text('Einstellungen'),
+                      child: Text(strings.settings),
                     ),
                     PopupMenuDivider(),
                     PopupMenuItem<_HostMenuAction>(
                       value: _HostMenuAction.closeRoom,
-                      child: Text('Raum schliessen'),
+                      child: Text(strings.closeRoom),
                     ),
                   ],
                   icon: const Icon(Icons.menu),
@@ -352,20 +396,22 @@ class _RoomScreenState extends State<RoomScreen> {
                 ),
               if (room.playbackErrorMessage != null) const SizedBox(height: 8),
               _NowPlayingCard(
-                title: widget.controller.nowPlayingTitle ?? 'Noch kein Song',
+                title: widget.controller.nowPlayingTitle ?? strings.noSongYet,
+                artist: room.nowPlayingTrack?.artist,
+                addedBy: widget.controller.nowPlayingAddedByDisplayName,
+                progressMs: _displayProgressMs(),
+                durationMs: widget.controller.playbackState.actualDurationMs,
                 paused: room.isPaused,
                 playbackReady: widget.controller.isPlaybackReady,
-                deviceLabel:
-                    widget.controller.playbackState.selectedDeviceId ??
-                    'Kein Geraet',
+                strings: strings,
               ),
               const SizedBox(height: 12),
-              _HostActions(controller: widget.controller),
+              _HostActions(controller: widget.controller, strings: strings),
               const SizedBox(height: 12),
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  labelText: 'Spotify Suche',
+                  labelText: strings.spotifySearch,
                   suffixIcon: _isSearching
                       ? const Padding(
                           padding: EdgeInsets.all(12),
@@ -384,6 +430,7 @@ class _RoomScreenState extends State<RoomScreen> {
                                     _searchController.clear();
                                     _query = '';
                                     _searchError = null;
+                                    _searchNotice = null;
                                     _searchResults = const <SpotifyTrack>[];
                                   });
                                 },
@@ -396,13 +443,11 @@ class _RoomScreenState extends State<RoomScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Tippe einen Song oder Artist ein. Addbar sind nur echte Spotify-Treffer.',
-                    ),
+                    Text(strings.searchHint),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Vorschlaege',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                    Text(
+                      strings.suggestions,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     if (_isLoadingSuggestions)
@@ -415,7 +460,7 @@ class _RoomScreenState extends State<RoomScreen> {
                         ),
                       )
                     else if (_suggestions.isEmpty)
-                      const Text('Keine Spotify-Vorschlaege verfuegbar.')
+                      Text(strings.noSpotifySuggestions)
                     else
                       ..._suggestions.map(
                         (track) => Card(
@@ -432,26 +477,59 @@ class _RoomScreenState extends State<RoomScreen> {
                   ],
                 )
               else if (_searchError != null)
-                Text(
-                  _searchError!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                )
-              else if (_searchResults.isNotEmpty)
-                ..._searchResults.map(
-                  (track) => Card(
-                    child: ListTile(
-                      title: Text(track.title),
-                      subtitle: Text(track.artist),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.add),
-                        onPressed: () => _addSearchResult(track),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_searchNotice != null) ...[
+                      Text(
+                        _searchNotice!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    Text(
+                      _searchError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
                       ),
                     ),
-                  ),
+                  ],
+                )
+              else if (_searchResults.isNotEmpty)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_searchNotice != null) ...[
+                      Text(
+                        _searchNotice!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    ..._searchResults.map(
+                      (track) => Card(
+                        child: ListTile(
+                          title: Text(track.title),
+                          subtitle: Text(track.artist),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.add),
+                            onPressed: () => _addSearchResult(track),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               const SizedBox(height: 8),
               Text(
-                'Teilnehmer: ${room.participantCount}/${room.settings.maxParticipants}',
+                strings.participantsSummary(
+                  room.participantCount,
+                  room.settings.maxParticipants,
+                ),
               ),
               const SizedBox(height: 12),
               if (widget.controller.error != null)
@@ -459,17 +537,23 @@ class _RoomScreenState extends State<RoomScreen> {
                   color: Colors.red.withValues(alpha: 0.12),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Text(widget.controller.error!),
+                    child: Text(
+                      _localizedControllerError(
+                            widget.controller.error,
+                            strings,
+                          ) ??
+                          widget.controller.error!,
+                    ),
                   ),
                 ),
               const SizedBox(height: 8),
-              const Text(
-                'Warteschlange',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Text(
+                strings.queue,
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               if (room.queue.isEmpty)
-                const Text('Keine Songs verfuegbar.')
+                Text(strings.noSongsAvailable)
               else
                 ...room.queue.map(
                   (item) =>
@@ -481,6 +565,19 @@ class _RoomScreenState extends State<RoomScreen> {
       },
     );
   }
+
+  String? _localizedControllerError(String? error, AppStrings strings) {
+    switch (error) {
+      case 'Room not found or closed.':
+      case 'Raum nicht gefunden oder geschlossen.':
+        return strings.roomNotFoundOrClosed();
+      case 'Dieser Interpret wurde vom Host ausgeschlossen.':
+      case 'This artist has been excluded by the host.':
+        return strings.excludedArtistAddError();
+      default:
+        return error;
+    }
+  }
 }
 
 enum _HostMenuAction { invite, exportPlaylist, guests, settings, closeRoom }
@@ -488,35 +585,83 @@ enum _HostMenuAction { invite, exportPlaylist, guests, settings, closeRoom }
 class _NowPlayingCard extends StatelessWidget {
   const _NowPlayingCard({
     required this.title,
+    required this.artist,
+    required this.addedBy,
+    required this.progressMs,
+    required this.durationMs,
     required this.paused,
     required this.playbackReady,
-    required this.deviceLabel,
+    required this.strings,
   });
 
   final String title;
+  final String? artist;
+  final String? addedBy;
+  final int? progressMs;
+  final int? durationMs;
   final bool paused;
   final bool playbackReady;
-  final String deviceLabel;
+  final AppStrings strings;
 
   @override
   Widget build(BuildContext context) {
+    final safeDurationMs = durationMs != null && durationMs! > 0
+        ? durationMs!
+        : null;
+    final safeProgressMs = progressMs != null && progressMs! >= 0
+        ? progressMs!
+        : null;
+    final progressValue = safeDurationMs == null || safeProgressMs == null
+        ? 0.0
+        : (safeProgressMs / safeDurationMs).clamp(0.0, 1.0);
     return Card(
       child: ListTile(
-        title: const Text('Now Playing'),
-        subtitle: Text('$title\nDevice: $deviceLabel'),
+        title: Text(strings.nowPlaying),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(artist ?? strings.unknownArtist),
+            if (addedBy != null) Text(strings.addedBy(addedBy!)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(_formatPlaybackTime(safeProgressMs)),
+                const SizedBox(width: 8),
+                Expanded(child: LinearProgressIndicator(value: progressValue)),
+                const SizedBox(width: 8),
+                Text(_formatPlaybackTime(safeDurationMs)),
+              ],
+            ),
+          ],
+        ),
         isThreeLine: true,
         trailing: Text(
-          playbackReady ? (paused ? 'Pausiert' : 'Aktiv') : 'Setup offen',
+          playbackReady
+              ? (paused ? strings.paused : strings.active)
+              : strings.setupOpen,
         ),
       ),
     );
   }
+
+  String _formatPlaybackTime(int? milliseconds) {
+    if (milliseconds == null) {
+      return '--:--';
+    }
+    final totalSeconds = milliseconds ~/ 1000;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
 }
 
 class _HostActions extends StatelessWidget {
-  const _HostActions({required this.controller});
+  const _HostActions({required this.controller, required this.strings});
 
   final PartyRoomController controller;
+  final AppStrings strings;
 
   @override
   Widget build(BuildContext context) {
@@ -528,24 +673,22 @@ class _HostActions extends StatelessWidget {
       runSpacing: 8,
       children: [
         if (!controller.isPlaybackReady)
-          const Chip(
-            label: Text('Host braucht Spotify und ein Geraet fuer Playback'),
-          ),
+          Chip(label: Text(strings.playbackHostNeedsSpotify)),
         FilledButton.tonal(
           onPressed: controller.isPlaybackReady ? controller.playTopSong : null,
-          child: const Text('Top Song spielen'),
+          child: Text(strings.playTopSong),
         ),
         FilledButton.tonal(
           onPressed: controller.isPlaybackReady
               ? controller.skipNowPlaying
               : null,
-          child: const Text('Skip'),
+          child: Text(strings.skip),
         ),
         FilledButton.tonal(
           onPressed: controller.isPlaybackReady
               ? controller.pauseOrResume
               : null,
-          child: const Text('Pause/Resume'),
+          child: Text(strings.pauseResume),
         ),
       ],
     );

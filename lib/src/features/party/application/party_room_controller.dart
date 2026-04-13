@@ -75,6 +75,20 @@ class PartyRoomController extends ChangeNotifier {
       _spotifyConnectionController?.connectionState.spotifyConnected ?? false;
   bool get isPlaybackReady => _playbackOrchestrator.canControlPlayback;
 
+  bool isExplicitExcludedArtistQuery(String query) {
+    final room = _currentRoomSnapshot();
+    if (room == null) {
+      return false;
+    }
+    final normalizedQuery = _normalizeSearchValue(query);
+    if (normalizedQuery.isEmpty) {
+      return false;
+    }
+    return room.settings.excludedArtists.any(
+      (artist) => _normalizeSearchValue(artist.name) == normalizedQuery,
+    );
+  }
+
   String? get nowPlayingTitle {
     final room = _room;
     if (room == null) {
@@ -93,6 +107,23 @@ class PartyRoomController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  String? get nowPlayingAddedByDisplayName {
+    final room = _currentRoomSnapshot();
+    if (room == null) {
+      return null;
+    }
+    final addedByUserId = room.nowPlayingAddedByUserId?.trim();
+    if (addedByUserId == null || addedByUserId.isEmpty) {
+      return null;
+    }
+    final addedBy = room.participants[addedByUserId];
+    final displayName = addedBy?.displayName.trim();
+    if (displayName == null || displayName.isEmpty) {
+      return null;
+    }
+    return displayName;
   }
 
   Future<void> createRoom({
@@ -119,12 +150,22 @@ class PartyRoomController extends ChangeNotifier {
   Future<bool> joinRoom({
     required String code,
     required UserProfile user,
+    String? password,
   }) async {
     final room = _repository.readRoom(code);
     if (room == null || room.isClosed) {
       _error = 'Room not found or closed.';
       notifyListeners();
       return false;
+    }
+    if (!room.settings.isPublic) {
+      final expectedPassword = room.settings.roomPassword?.trim() ?? '';
+      final providedPassword = password?.trim() ?? '';
+      if (expectedPassword.isEmpty || providedPassword != expectedPassword) {
+        _error = 'Passwort fuer privaten Raum ist falsch.';
+        notifyListeners();
+        return false;
+      }
     }
     if (room.participantCount >= room.settings.maxParticipants &&
         !room.participants.containsKey(user.id)) {
@@ -147,7 +188,12 @@ class PartyRoomController extends ChangeNotifier {
   }
 
   Future<List<SpotifyTrack>> search(String query) async {
-    return _catalogService.searchTracks(query);
+    final results = await _catalogService.searchTracks(query);
+    final room = _currentRoomSnapshot();
+    if (room == null) {
+      return results;
+    }
+    return results.where((track) => !_isTrackBlocked(room, track)).toList();
   }
 
   Future<List<SpotifyTrack>> loadSuggestions() async {
@@ -177,6 +223,7 @@ class PartyRoomController extends ChangeNotifier {
     final excludedTrackIds = <String>{
       if (room.nowPlayingTrackId != null) room.nowPlayingTrackId!,
       ...room.queue.map((item) => item.track.id),
+      ...room.settings.excludedTracks.map((track) => track.id),
     };
     final seedQueries = <String>[];
 
@@ -208,7 +255,8 @@ class PartyRoomController extends ChangeNotifier {
       final results = await _safeSearchSuggestionSeed(seed);
       _logSuggestions('seed end "$seed" results=${results.length}');
       for (final track in results) {
-        if (excludedTrackIds.contains(track.id)) {
+        if (excludedTrackIds.contains(track.id) ||
+            _isTrackExcludedByArtist(room, track)) {
           continue;
         }
         if (!seenTrackIds.add(track.id)) {
@@ -227,7 +275,8 @@ class PartyRoomController extends ChangeNotifier {
       final fallback = await _safeLoadFallbackSuggestions();
       _logSuggestions('fallback end results=${fallback.length}');
       for (final track in fallback) {
-        if (excludedTrackIds.contains(track.id)) {
+        if (excludedTrackIds.contains(track.id) ||
+            _isTrackExcludedByArtist(room, track)) {
           continue;
         }
         if (!seenTrackIds.add(track.id)) {
@@ -266,9 +315,9 @@ class PartyRoomController extends ChangeNotifier {
 
   Future<List<SpotifyTrack>> _safeLoadFallbackSuggestions() async {
     try {
-      final results = await _catalogService
-          .loadSuggestions()
-          .timeout(_suggestionLoadTimeout);
+      final results = await _catalogService.loadSuggestions().timeout(
+        _suggestionLoadTimeout,
+      );
       _logSuggestions(
         '_safeLoadFallbackSuggestions success count=${results.length}',
       );
@@ -300,6 +349,13 @@ class PartyRoomController extends ChangeNotifier {
     }
     if (_isTrackInCooldown(room, track.id)) {
       _error = 'Track is in cooldown.';
+      notifyListeners();
+      return;
+    }
+    if (_isTrackBlocked(room, track)) {
+      _error = _isTrackExcluded(room, track.id)
+          ? 'Dieser Song wurde vom Host ausgeschlossen.'
+          : 'Dieser Interpret wurde vom Host ausgeschlossen.';
       notifyListeners();
       return;
     }
@@ -500,7 +556,10 @@ class PartyRoomController extends ChangeNotifier {
 
     _error = null;
     final updatedRoom = room.copyWith(
-      settings: settings,
+      settings: settings.copyWith(
+        isPublic: room.settings.isPublic,
+        roomPassword: room.settings.roomPassword,
+      ),
       playbackErrorMessage: room.playbackErrorMessage,
     );
     _room = updatedRoom;
@@ -621,6 +680,7 @@ class PartyRoomController extends ChangeNotifier {
         desiredNowPlayingTrackId: null,
         nowPlayingTrack: null,
         nowPlayingTrackId: null,
+        nowPlayingAddedByUserId: null,
         isPaused: false,
         playbackErrorMessage: null,
       );
@@ -667,6 +727,33 @@ class PartyRoomController extends ChangeNotifier {
       return false;
     }
     return DateTime.now().isBefore(cooldownUntil);
+  }
+
+  bool _isTrackExcluded(PartyRoom room, String trackId) {
+    return room.settings.excludedTracks.any((track) => track.id == trackId);
+  }
+
+  bool _isTrackBlocked(PartyRoom room, SpotifyTrack track) {
+    return _isTrackExcluded(room, track.id) ||
+        _isTrackExcludedByArtist(room, track);
+  }
+
+  bool _isTrackExcludedByArtist(PartyRoom room, SpotifyTrack track) {
+    final excludedArtistIds = room.settings.excludedArtists
+        .map((artist) => artist.id)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet();
+    if (excludedArtistIds.isEmpty || track.artistRefs.isEmpty) {
+      return false;
+    }
+
+    return track.artistRefs.any(
+      (artist) => excludedArtistIds.contains(artist.id),
+    );
+  }
+
+  String _normalizeSearchValue(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
   PartyRoom? _currentRoomSnapshot() {

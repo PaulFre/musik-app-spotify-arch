@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:party_queue_app/src/app/app_strings.dart';
 import 'package:party_queue_app/src/app/services.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/host_flow_resume_store.dart';
@@ -17,16 +18,20 @@ class HostRoomScreen extends StatefulWidget {
 
 class _HostRoomScreenState extends State<HostRoomScreen> {
   final _nameController = TextEditingController(text: 'Host');
+  final _passwordController = TextEditingController();
   final SpotifyConnectionController _spotifyController =
       Services.spotifyConnectionController;
+  late PartyRoomController _setupController;
   int _cooldown = 15;
   int _maxParticipants = 25;
   bool _isPublic = false;
   String? _lastSnackErrorCode;
+  String? _roomConfigError;
 
   @override
   void initState() {
     super.initState();
+    _setupController = _createSetupController();
     _spotifyController.addListener(_handleSpotifyStateChanged);
   }
 
@@ -39,8 +44,19 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
   @override
   void dispose() {
     _spotifyController.removeListener(_handleSpotifyStateChanged);
+    _setupController.dispose();
     _nameController.dispose();
+    _passwordController.dispose();
     super.dispose();
+  }
+
+  PartyRoomController _createSetupController() {
+    return PartyRoomController(
+      repository: Services.partyRoomRepository,
+      catalogService: Services.spotifyCatalogService,
+      playbackOrchestrator: Services.playbackOrchestrator,
+      spotifyConnectionController: _spotifyController,
+    );
   }
 
   void _handleSpotifyStateChanged() {
@@ -57,7 +73,7 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
     messenger?.showSnackBar(
       SnackBar(
         content: Text(
-          connection.errorMessage ?? 'Spotify-Verbindung wurde abgebrochen.',
+          connection.errorMessage ?? context.strings.spotifyConnectionCancelled,
         ),
       ),
     );
@@ -69,12 +85,26 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
   }
 
   Future<void> _createRoom() async {
-    final controller = PartyRoomController(
-      repository: Services.partyRoomRepository,
-      catalogService: Services.spotifyCatalogService,
-      playbackOrchestrator: Services.playbackOrchestrator,
-      spotifyConnectionController: _spotifyController,
+    final strings = context.strings;
+    final trimmedPassword = _passwordController.text.trim();
+    if (!_isPublic && trimmedPassword.isEmpty) {
+      setState(() {
+        _roomConfigError = strings.missingPrivateRoomPassword;
+      });
+      return;
+    }
+    if (_roomConfigError != null && mounted) {
+      setState(() {
+        _roomConfigError = null;
+      });
+    }
+    final settings = RoomSettings(
+      cooldownMinutes: _cooldown,
+      maxParticipants: _maxParticipants,
+      isPublic: _isPublic,
+      roomPassword: _isPublic ? null : trimmedPassword,
     );
+
     final user = UserProfile(
       id: 'host-${DateTime.now().microsecondsSinceEpoch}',
       displayName: _nameController.text.trim().isEmpty
@@ -83,30 +113,25 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
       isHost: true,
     );
 
-    await controller.createRoom(
-      host: user,
-      settings: RoomSettings(
-        cooldownMinutes: _cooldown,
-        maxParticipants: _maxParticipants,
-        isPublic: _isPublic,
-      ),
-    );
+    await _setupController.createRoom(host: user, settings: settings);
 
     if (!mounted) {
       return;
     }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => RoomScreen(controller: controller),
+        builder: (_) => RoomScreen(controller: _setupController),
       ),
     );
-    controller.dispose();
+    _setupController.dispose();
+    _setupController = _createSetupController();
   }
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
     return Scaffold(
-      appBar: AppBar(title: const Text('Raum hosten')),
+      appBar: AppBar(title: Text(strings.hostRoom)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -121,15 +146,18 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Spotify-Host Setup',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                      Text(
+                        strings.spotifyHostSetup,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         connection.spotifyConnected
-                            ? 'Verbunden als ${connection.displayName ?? 'Spotify Host'}'
-                            : 'Spotify noch nicht verbunden',
+                            ? strings.connectedAs(
+                                connection.displayName ??
+                                    strings.spotifyHostFallback,
+                              )
+                            : strings.spotifyNotConnected,
                       ),
                       if (connection.errorMessage != null) ...[
                         const SizedBox(height: 8),
@@ -153,8 +181,8 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                                 : _connectSpotify,
                             child: Text(
                               connection.spotifyConnected
-                                  ? 'Spotify verbunden'
-                                  : 'Mit Spotify verbinden',
+                                  ? strings.spotifyConnected
+                                  : strings.connectSpotify,
                             ),
                           ),
                           OutlinedButton(
@@ -163,7 +191,7 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                                     !_spotifyController.isLoading
                                 ? _spotifyController.refreshDevices
                                 : null,
-                            child: const Text('Geraete laden'),
+                            child: Text(strings.loadDevices),
                           ),
                           OutlinedButton(
                             onPressed:
@@ -171,10 +199,20 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                                     !_spotifyController.isLoading
                                 ? _spotifyController.disconnect
                                 : null,
-                            child: const Text('Ausloggen'),
+                            child: Text(strings.logout),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 12),
+                      if (_roomConfigError != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _roomConfigError!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       if (playback.playbackError != null) ...[
                         Text(
@@ -203,14 +241,14 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                                   }
                                 }
                               : null,
-                          decoration: const InputDecoration(
-                            labelText: 'Wiedergabegeraet',
+                          decoration: InputDecoration(
+                            labelText: strings.playbackDevice,
                           ),
                         )
                       else
                         Text(
                           playback.playbackError ??
-                              'Noch keine Geraete geladen. Raum-Erstellung bleibt erlaubt, Playback aber gesperrt.',
+                              strings.playbackSetupStillOpen,
                         ),
                     ],
                   ),
@@ -221,16 +259,16 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Dein Anzeigename'),
+            decoration: InputDecoration(labelText: strings.yourDisplayName),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<int>(
             initialValue: _cooldown,
-            items: const [0, 15, 30, 60]
+            items: [0, 15, 30, 60]
                 .map(
                   (minutes) => DropdownMenuItem(
                     value: minutes,
-                    child: Text('$minutes Minuten Cooldown'),
+                    child: Text(strings.cooldownOption(minutes)),
                   ),
                 )
                 .toList(),
@@ -239,7 +277,7 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
                 setState(() => _cooldown = value);
               }
             },
-            decoration: const InputDecoration(labelText: 'Song-Cooldown'),
+            decoration: InputDecoration(labelText: strings.songCooldown),
           ),
           const SizedBox(height: 12),
           Slider(
@@ -251,18 +289,41 @@ class _HostRoomScreenState extends State<HostRoomScreen> {
             onChanged: (value) =>
                 setState(() => _maxParticipants = value.toInt()),
           ),
-          Text('Max. Teilnehmer: $_maxParticipants'),
+          Text(strings.maxParticipants(_maxParticipants)),
           const SizedBox(height: 8),
           SwitchListTile(
-            title: const Text('Oeffentlicher Raum'),
+            title: Text(strings.publicRoom),
             value: _isPublic,
-            onChanged: (value) => setState(() => _isPublic = value),
+            onChanged: (value) {
+              setState(() {
+                _isPublic = value;
+                _roomConfigError = null;
+                if (_isPublic) {
+                  _passwordController.clear();
+                }
+              });
+            },
           ),
+          if (!_isPublic) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _passwordController,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: strings.privateRoomPassword,
+              ),
+              onChanged: (_) {
+                if (_roomConfigError == null) {
+                  return;
+                }
+                setState(() {
+                  _roomConfigError = null;
+                });
+              },
+            ),
+          ],
           const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _createRoom,
-            child: const Text('Raum erstellen'),
-          ),
+          FilledButton(onPressed: _createRoom, child: Text(strings.createRoom)),
         ],
       ),
     );

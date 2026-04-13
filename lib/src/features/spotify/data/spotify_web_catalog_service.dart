@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:party_queue_app/src/features/party/domain/models/spotify_artist_ref.dart';
 import 'package:http/http.dart' as http;
 import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
 import 'package:party_queue_app/src/features/spotify/data/spotify_app_config.dart';
@@ -16,7 +17,6 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
     'Save Your Tears',
     'bad guy',
   ];
-
   SpotifyWebCatalogService({
     required SpotifyAppConfig config,
     required SpotifyAuthService authService,
@@ -64,9 +64,7 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
                 'market': 'from_token',
               },
             ),
-            headers: <String, String>{
-              'Authorization': 'Bearer $accessToken',
-            },
+            headers: <String, String>{'Authorization': 'Bearer $accessToken'},
           )
           .timeout(_requestTimeout);
     } on TimeoutException {
@@ -88,10 +86,11 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final tracksPayload = payload['tracks'] as Map<String, dynamic>?;
-    final items = tracksPayload?['items'] as List<dynamic>? ?? const <dynamic>[];
+    final items =
+        tracksPayload?['items'] as List<dynamic>? ?? const <dynamic>[];
+    final trackItems = items.whereType<Map<String, dynamic>>().toList();
 
-    final results = items
-        .whereType<Map<String, dynamic>>()
+    final results = trackItems
         .map(_toSpotifyTrack)
         .whereType<SpotifyTrack>()
         .toList();
@@ -135,14 +134,16 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
       return null;
     }
 
-    final restrictions = json['restrictions'] as Map<String, dynamic>?;
     final isPlayable = json['is_playable'];
-    if (isPlayable == false || restrictions != null) {
+    final isLocal = json['is_local'] == true;
+    if (isPlayable == false || isLocal) {
       return null;
     }
 
-    final artists = (json['artists'] as List<dynamic>? ?? const <dynamic>[])
+    final artistItems = (json['artists'] as List<dynamic>? ?? const <dynamic>[])
         .whereType<Map<String, dynamic>>()
+        .toList();
+    final artists = artistItems
         .map((artist) => (artist['name'] as String?)?.trim())
         .whereType<String>()
         .where((artist) => artist.isNotEmpty)
@@ -150,12 +151,22 @@ class SpotifyWebCatalogService implements SpotifyCatalogService {
     if (artists.isEmpty) {
       return null;
     }
+    final artistRefs = artistItems
+        .map(
+          (artist) => SpotifyArtistRef(
+            id: ((artist['id'] as String?) ?? '').trim(),
+            name: ((artist['name'] as String?) ?? '').trim(),
+          ),
+        )
+        .where((artist) => artist.id.isNotEmpty && artist.name.isNotEmpty)
+        .toList();
 
     return SpotifyTrack(
       id: id,
       uri: uri,
       title: title,
       artist: artists.join(', '),
+      artistRefs: artistRefs,
     );
   }
 }

@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
+import 'package:party_queue_app/src/features/party/domain/models/spotify_artist_ref.dart';
+import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
 import 'package:party_queue_app/src/features/party/domain/models/user_profile.dart';
 import 'package:party_queue_app/src/features/party/presentation/room_settings_sheet.dart';
 import 'package:party_queue_app/src/features/spotify/application/playback_orchestrator.dart';
@@ -153,6 +155,202 @@ void main() {
       await bundle.dispose();
     },
   );
+
+  testWidgets('host can add excluded songs and save them into room settings', (
+    WidgetTester tester,
+  ) async {
+    final bundle = await _buildSettingsBundle();
+    await bundle.hostController.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomSettingsSheet(controller: bundle.hostController),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Song fuer Ausschluss suchen'),
+      'Brightside',
+    );
+    await tester.tap(find.text('Suchen'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Mr. Brightside'), findsOneWidget);
+    await tester.tap(find.byTooltip('Song ausschliessen'));
+    await tester.pump();
+
+    expect(find.text('Mr. Brightside'), findsOneWidget);
+
+    await tester.tap(find.text('Speichern'));
+    await tester.pump();
+
+    expect(
+      bundle.hostController.room!.settings.excludedTracks.map(
+        (track) => track.id,
+      ),
+      contains('3n3Ppam7vgaVa1iaRUc9Lp'),
+    );
+
+    await bundle.dispose();
+  });
+
+  testWidgets('shows existing excluded songs in room settings', (
+    WidgetTester tester,
+  ) async {
+    final bundle = await _buildSettingsBundle();
+    await bundle.hostController.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(
+        excludedTracks: <SpotifyTrack>[
+          SpotifyTrack(
+            id: '3n3Ppam7vgaVa1iaRUc9Lp',
+            uri: 'spotify:track:3n3Ppam7vgaVa1iaRUc9Lp',
+            title: 'Mr. Brightside',
+            artist: 'The Killers',
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomSettingsSheet(controller: bundle.hostController),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Ausgeschlossene Songs'), findsOneWidget);
+    expect(find.text('Mr. Brightside'), findsOneWidget);
+    expect(find.text('The Killers'), findsOneWidget);
+
+    await bundle.dispose();
+  });
+
+  testWidgets('settings sheet stays scrollable with many excluded songs', (
+    WidgetTester tester,
+  ) async {
+    final bundle = await _buildSettingsBundle();
+    await bundle.hostController.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: RoomSettings(
+        excludedTracks: List<SpotifyTrack>.generate(
+          12,
+          (index) => SpotifyTrack(
+            id: 'track-$index',
+            uri: 'spotify:track:track-$index',
+            title: 'Excluded $index',
+            artist: 'Artist $index',
+          ),
+        ),
+      ),
+    );
+
+    await tester.binding.setSurfaceSize(const Size(800, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomSettingsSheet(controller: bundle.hostController),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Speichern'), findsOneWidget);
+
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, -400),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Speichern'), findsOneWidget);
+
+    await bundle.dispose();
+  });
+
+  testWidgets('host can add excluded artists and save them into room settings', (
+    WidgetTester tester,
+  ) async {
+    final bundle = await _buildSettingsBundle();
+    await bundle.hostController.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomSettingsSheet(controller: bundle.hostController),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Interpret fuer Ausschluss suchen'),
+      'Weeknd',
+    );
+    await tester.tap(find.text('Suchen'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('The Weeknd'), findsOneWidget);
+    await tester.tap(find.byTooltip('Interpret ausschliessen'));
+    await tester.pump();
+
+    expect(find.text('The Weeknd'), findsOneWidget);
+
+    await tester.tap(find.text('Speichern'));
+    await tester.pump();
+
+    expect(
+      bundle.hostController.room!.settings.excludedArtists.map((artist) => artist.id),
+      contains('artist-weeknd'),
+    );
+
+    await bundle.dispose();
+  });
+
+  testWidgets('artist ids are not shown in excluded artist ui', (
+    WidgetTester tester,
+  ) async {
+    final bundle = await _buildSettingsBundle();
+    await bundle.hostController.createRoom(
+      host: const UserProfile(id: 'host-1', displayName: 'Host', isHost: true),
+      settings: const RoomSettings(
+        excludedArtists: <SpotifyArtistRef>[
+          SpotifyArtistRef(id: 'artist-weeknd', name: 'The Weeknd'),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RoomSettingsSheet(controller: bundle.hostController),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('The Weeknd'), findsOneWidget);
+    expect(find.text('artist-weeknd'), findsNothing);
+
+    await bundle.dispose();
+  });
 }
 
 Future<_SettingsTestBundle> _buildSettingsBundle() async {

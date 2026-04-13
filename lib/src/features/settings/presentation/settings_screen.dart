@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:party_queue_app/src/app/app_strings.dart';
 import 'package:party_queue_app/src/features/settings/presentation/settings_scope.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -10,21 +11,24 @@ class SettingsScreen extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final strings = context.strings;
         return Scaffold(
-          appBar: AppBar(title: const Text('Einstellungen')),
+          appBar: AppBar(title: Text(strings.settings)),
           body: ListView(
             children: [
               const SizedBox(height: 8),
               ListTile(
-                title: const Text('Dark Mode'),
+                title: Text(strings.themeMode),
                 trailing: SegmentedButton<ThemeMode>(
-                  segments: const [
+                  segments: [
                     ButtonSegment(
-                      value: ThemeMode.system,
-                      label: Text('System'),
+                      value: ThemeMode.light,
+                      label: Text(strings.light),
                     ),
-                    ButtonSegment(value: ThemeMode.light, label: Text('Hell')),
-                    ButtonSegment(value: ThemeMode.dark, label: Text('Dunkel')),
+                    ButtonSegment(
+                      value: ThemeMode.dark,
+                      label: Text(strings.dark),
+                    ),
                   ],
                   selected: <ThemeMode>{controller.themeMode},
                   onSelectionChanged: (selection) =>
@@ -32,7 +36,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               ListTile(
-                title: const Text('Sprache'),
+                title: Text(strings.language),
                 trailing: SegmentedButton<String>(
                   segments: const [
                     ButtonSegment(value: 'de', label: Text('DE')),
@@ -45,8 +49,10 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               ListTile(
-                title: const Text('Standard-Cooldown'),
-                subtitle: Text('${controller.defaultCooldownMinutes} Minuten'),
+                title: Text(strings.defaultCooldown),
+                subtitle: Text(
+                  strings.minutes(controller.defaultCooldownMinutes),
+                ),
                 trailing: DropdownButton<int>(
                   value: controller.defaultCooldownMinutes,
                   items: const [0, 15, 30, 60]
@@ -65,7 +71,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               SwitchListTile(
-                title: const Text('Benachrichtigungen'),
+                title: Text(strings.notifications),
                 value: controller.notificationsEnabled,
                 onChanged: controller.setNotificationsEnabled,
               ),

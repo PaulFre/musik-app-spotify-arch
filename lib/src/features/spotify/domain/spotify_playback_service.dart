@@ -74,6 +74,7 @@ class FakeSpotifyPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualNowPlayingTrackId: track.id,
       actualProgressMs: 0,
+      actualDurationMs: null,
       actualIsPaused: false,
       lastCommand: 'play',
       playbackErrorCode: null,

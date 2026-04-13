@@ -1,3 +1,4 @@
+import 'package:party_queue_app/src/features/party/domain/models/spotify_artist_ref.dart';
 import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
 import 'package:party_queue_app/src/features/spotify/application/playback_orchestrator.dart';
 import 'package:party_queue_app/src/features/spotify/application/spotify_connection_controller.dart';
@@ -55,6 +56,12 @@ class LargeCatalogService implements SpotifyCatalogService {
           uri: 'spotify:track:track-$index',
           title: 'Track $index',
           artist: 'Artist ${index % 7}',
+          artistRefs: <SpotifyArtistRef>[
+            SpotifyArtistRef(
+              id: 'artist-${index % 7}',
+              name: 'Artist ${index % 7}',
+            ),
+          ],
         ),
       );
 

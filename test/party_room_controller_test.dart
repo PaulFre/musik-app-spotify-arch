@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:party_queue_app/src/features/party/application/party_room_controller.dart';
 import 'package:party_queue_app/src/features/party/data/party_room_repository.dart';
+import 'package:party_queue_app/src/features/party/domain/models/spotify_artist_ref.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_playback_intent.dart';
 import 'package:party_queue_app/src/features/party/domain/models/room_settings.dart';
 import 'package:party_queue_app/src/features/party/domain/models/spotify_track.dart';
@@ -67,6 +68,166 @@ void main() {
     harness.dispose();
   });
 
+  test(
+    'excluded songs are filtered from search and suggestions and cannot be added',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      const excludedTrack = SpotifyTrack(
+        id: '3n3Ppam7vgaVa1iaRUc9Lp',
+        uri: 'spotify:track:3n3Ppam7vgaVa1iaRUc9Lp',
+        title: 'Mr. Brightside',
+        artist: 'The Killers',
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(
+          excludedTracks: <SpotifyTrack>[excludedTrack],
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final searchResults = await controller.search('');
+      expect(
+        searchResults.any((track) => track.id == excludedTrack.id),
+        isFalse,
+      );
+
+      final suggestions = await controller.loadSuggestions();
+      expect(suggestions.any((track) => track.id == excludedTrack.id), isFalse);
+
+      await controller.addTrack(excludedTrack);
+      expect(controller.room!.queue, isEmpty);
+      expect(controller.error, 'Dieser Song wurde vom Host ausgeschlossen.');
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test(
+    'excluded artists are filtered from search and suggestions and cannot be added',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: ArtistAwareFakeSpotifyCatalogService(),
+      );
+      final controller = PartyRoomController(
+        repository: InMemoryPartyRoomRepository(),
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      const blockedTrack = SpotifyTrack(
+        id: 'blocked-artist-track',
+        uri: 'spotify:track:blocked-artist-track',
+        title: 'Starboy',
+        artist: 'The Weeknd',
+        artistRefs: <SpotifyArtistRef>[
+          SpotifyArtistRef(id: 'artist-weeknd', name: 'The Weeknd'),
+        ],
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(
+          excludedArtists: <SpotifyArtistRef>[
+            SpotifyArtistRef(id: 'artist-weeknd', name: 'The Weeknd'),
+          ],
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final searchResults = await controller.search('weeknd');
+      expect(
+        searchResults.any((track) => track.id == blockedTrack.id),
+        isFalse,
+      );
+
+      final suggestions = await controller.loadSuggestions();
+      expect(suggestions.any((track) => track.id == blockedTrack.id), isFalse);
+
+      await controller.addTrack(blockedTrack);
+      expect(controller.room!.queue, isEmpty);
+      expect(
+        controller.error,
+        'Dieser Interpret wurde vom Host ausgeschlossen.',
+      );
+
+      controller.dispose();
+      harness.dispose();
+    },
+  );
+
+  test(
+    'createRoom persists public and private room settings correctly',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final repository = InMemoryPartyRoomRepository();
+      final publicController = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+      final privateController = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await publicController.createRoom(
+        host: const UserProfile(
+          id: 'host-public',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(isPublic: true, roomPassword: null),
+      );
+      await privateController.createRoom(
+        host: const UserProfile(
+          id: 'host-private',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(
+          isPublic: false,
+          roomPassword: 'secret123',
+        ),
+      );
+
+      expect(publicController.room!.settings.isPublic, isTrue);
+      expect(publicController.room!.settings.roomPassword, isNull);
+      expect(privateController.room!.settings.isPublic, isFalse);
+      expect(privateController.room!.settings.roomPassword, 'secret123');
+
+      publicController.dispose();
+      privateController.dispose();
+      await repository.dispose();
+      harness.dispose();
+    },
+  );
+
   test('guest can leave room and host leaving closes room', () async {
     final harness = await TestSpotifyHarness.ready(
       catalogService: FakeSpotifyCatalogService(),
@@ -114,6 +275,91 @@ void main() {
     await repository.dispose();
     harness.dispose();
   });
+
+  test(
+    'private room requires correct password while public room does not',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final repository = InMemoryPartyRoomRepository();
+      final privateHost = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+      final privateGuest = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+      final publicHost = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+      final publicGuest = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await privateHost.createRoom(
+        host: const UserProfile(
+          id: 'host-private',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(
+          isPublic: false,
+          roomPassword: 'secret123',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final wrongPasswordJoin = await privateGuest.joinRoom(
+        code: privateHost.room!.code,
+        user: const UserProfile(id: 'guest-private', displayName: 'Gast'),
+        password: 'wrong',
+      );
+      expect(wrongPasswordJoin, isFalse);
+      expect(privateGuest.error, 'Passwort fuer privaten Raum ist falsch.');
+
+      final correctPasswordJoin = await privateGuest.joinRoom(
+        code: privateHost.room!.code,
+        user: const UserProfile(id: 'guest-private', displayName: 'Gast'),
+        password: 'secret123',
+      );
+      expect(correctPasswordJoin, isTrue);
+
+      await publicHost.createRoom(
+        host: const UserProfile(
+          id: 'host-public',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(isPublic: true),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final publicJoin = await publicGuest.joinRoom(
+        code: publicHost.room!.code,
+        user: const UserProfile(id: 'guest-public', displayName: 'Gast'),
+      );
+      expect(publicJoin, isTrue);
+
+      privateHost.dispose();
+      privateGuest.dispose();
+      publicHost.dispose();
+      publicGuest.dispose();
+      await repository.dispose();
+      harness.dispose();
+    },
+  );
 
   test('host can update room settings and guest cannot', () async {
     final harness = await TestSpotifyHarness.ready(
@@ -167,6 +413,52 @@ void main() {
     await repository.dispose();
     harness.dispose();
   });
+
+  test(
+    'updateRoomSettings does not change public-private mode or room password',
+    () async {
+      final harness = await TestSpotifyHarness.ready(
+        catalogService: FakeSpotifyCatalogService(),
+      );
+      final repository = InMemoryPartyRoomRepository();
+      final controller = PartyRoomController(
+        repository: repository,
+        catalogService: harness.catalogService,
+        playbackOrchestrator: harness.playbackOrchestrator,
+        spotifyConnectionController: harness.connectionController,
+      );
+
+      await controller.createRoom(
+        host: const UserProfile(
+          id: 'host-1',
+          displayName: 'Host',
+          isHost: true,
+        ),
+        settings: const RoomSettings(
+          isPublic: false,
+          roomPassword: 'secret123',
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final updated = await controller.updateRoomSettings(
+        controller.room!.settings.copyWith(
+          cooldownMinutes: 30,
+          isPublic: true,
+          roomPassword: null,
+        ),
+      );
+
+      expect(updated, isTrue);
+      expect(controller.room!.settings.cooldownMinutes, 30);
+      expect(controller.room!.settings.isPublic, isFalse);
+      expect(controller.room!.settings.roomPassword, 'secret123');
+
+      controller.dispose();
+      await repository.dispose();
+      harness.dispose();
+    },
+  );
 
   test(
     'update room settings rejects participant limit below current participants',
@@ -897,10 +1189,11 @@ void main() {
       final suggestions = await controller.loadSuggestions();
 
       expect(suggestions, hasLength(3));
-      expect(
-        suggestions.map((track) => track.id),
-        <String>['suggestion-1', 'suggestion-2', 'fallback-1'],
-      );
+      expect(suggestions.map((track) => track.id), <String>[
+        'suggestion-1',
+        'suggestion-2',
+        'fallback-1',
+      ]);
 
       controller.dispose();
       harness.dispose();
@@ -1443,6 +1736,65 @@ class ContextAwareCatalogService implements SpotifyCatalogService {
   }
 }
 
+class ArtistAwareFakeSpotifyCatalogService implements SpotifyCatalogService {
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return const <SpotifyTrack>[
+      SpotifyTrack(
+        id: 'blocked-artist-track',
+        uri: 'spotify:track:blocked-artist-track',
+        title: 'Starboy',
+        artist: 'The Weeknd',
+        artistRefs: <SpotifyArtistRef>[
+          SpotifyArtistRef(id: 'artist-weeknd', name: 'The Weeknd'),
+        ],
+      ),
+      SpotifyTrack(
+        id: 'safe-pop-track',
+        uri: 'spotify:track:safe-pop-track',
+        title: 'Pop Song',
+        artist: 'Pop Artist',
+        artistRefs: <SpotifyArtistRef>[
+          SpotifyArtistRef(id: 'artist-pop', name: 'Pop Artist'),
+        ],
+      ),
+      SpotifyTrack(
+        id: 'safe-funk-track',
+        uri: 'spotify:track:safe-funk-track',
+        title: 'Funk Song',
+        artist: 'Funk Artist',
+        artistRefs: <SpotifyArtistRef>[
+          SpotifyArtistRef(id: 'artist-funk', name: 'Funk Artist'),
+        ],
+      ),
+    ];
+  }
+
+  @override
+  Future<List<SpotifyTrack>> searchTracks(String query) async {
+    return const <SpotifyTrack>[
+      SpotifyTrack(
+        id: 'blocked-artist-track',
+        uri: 'spotify:track:blocked-artist-track',
+        title: 'Starboy',
+        artist: 'The Weeknd',
+        artistRefs: <SpotifyArtistRef>[
+          SpotifyArtistRef(id: 'artist-weeknd', name: 'The Weeknd'),
+        ],
+      ),
+      SpotifyTrack(
+        id: 'safe-pop-track',
+        uri: 'spotify:track:safe-pop-track',
+        title: 'Pop Song',
+        artist: 'Pop Artist',
+        artistRefs: <SpotifyArtistRef>[
+          SpotifyArtistRef(id: 'artist-pop', name: 'Pop Artist'),
+        ],
+      ),
+    ];
+  }
+}
+
 class MultiResultContextCatalogService implements SpotifyCatalogService {
   @override
   Future<List<SpotifyTrack>> loadSuggestions() async {
@@ -1549,23 +1901,33 @@ class HangingSeedThenWorkingCatalogService implements SpotifyCatalogService {
       return Completer<List<SpotifyTrack>>().future;
     }
     if (query == 'Window Shopper') {
-      return Future<List<SpotifyTrack>>.value(
-        const <SpotifyTrack>[
-          SpotifyTrack(
-            id: 'suggestion-1',
-            uri: 'spotify:track:suggestion-1',
-            title: 'In Da Club',
-            artist: '50 Cent',
-          ),
-          SpotifyTrack(
-            id: 'suggestion-2',
-            uri: 'spotify:track:suggestion-2',
-            title: 'Candy Shop',
-            artist: '50 Cent',
-          ),
-        ],
-      );
+      return Future<List<SpotifyTrack>>.value(const <SpotifyTrack>[
+        SpotifyTrack(
+          id: 'suggestion-1',
+          uri: 'spotify:track:suggestion-1',
+          title: 'In Da Club',
+          artist: '50 Cent',
+        ),
+        SpotifyTrack(
+          id: 'suggestion-2',
+          uri: 'spotify:track:suggestion-2',
+          title: 'Candy Shop',
+          artist: '50 Cent',
+        ),
+      ]);
     }
     return Future<List<SpotifyTrack>>.value(const <SpotifyTrack>[]);
+  }
+}
+
+class EmptyCatalogService implements SpotifyCatalogService {
+  @override
+  Future<List<SpotifyTrack>> loadSuggestions() async {
+    return const <SpotifyTrack>[];
+  }
+
+  @override
+  Future<List<SpotifyTrack>> searchTracks(String query) async {
+    return const <SpotifyTrack>[];
   }
 }

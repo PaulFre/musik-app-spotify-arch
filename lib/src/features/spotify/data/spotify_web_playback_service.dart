@@ -197,6 +197,7 @@ class SpotifyWebPlaybackService implements SpotifyPlaybackService {
     _state = _state.copyWith(
       actualNowPlayingTrackId: track.id,
       actualProgressMs: 0,
+      actualDurationMs: null,
       actualIsPaused: false,
       lastCommand: 'play',
       playbackErrorCode: null,
@@ -256,6 +257,7 @@ class SpotifyWebPlaybackService implements SpotifyPlaybackService {
       _state = _state.copyWith(
         actualNowPlayingTrackId: null,
         actualProgressMs: null,
+        actualDurationMs: null,
         actualIsPaused: true,
         playbackErrorCode: null,
         playbackError: null,
@@ -284,6 +286,7 @@ class SpotifyWebPlaybackService implements SpotifyPlaybackService {
       selectedDeviceId: currentDevice.id.isEmpty ? _state.selectedDeviceId : currentDevice.id,
       actualNowPlayingTrackId: (track?['id'] as String?)?.trim(),
       actualProgressMs: (payload['progress_ms'] as num?)?.toInt(),
+      actualDurationMs: (track?['duration_ms'] as num?)?.toInt(),
       actualIsPaused: payload['is_playing'] == true ? false : true,
       playbackErrorCode: null,
       playbackError: null,

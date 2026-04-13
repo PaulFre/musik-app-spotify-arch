@@ -4,6 +4,7 @@ import 'package:party_queue_app/src/features/party/domain/models/party_room.dart
 
 abstract class PartyRoomRepository {
   Stream<PartyRoom?> watchRoom(String code);
+  Stream<List<PartyRoom>> watchPublicRooms();
   PartyRoom? readRoom(String code);
   Future<void> saveRoom(PartyRoom room);
   Future<void> closeRoom(String code);
@@ -13,6 +14,8 @@ class InMemoryPartyRoomRepository implements PartyRoomRepository {
   final Map<String, PartyRoom> _rooms = <String, PartyRoom>{};
   final Map<String, StreamController<PartyRoom?>> _controllers =
       <String, StreamController<PartyRoom?>>{};
+  final StreamController<List<PartyRoom>> _publicRoomsController =
+      StreamController<List<PartyRoom>>.broadcast(sync: true);
   final Map<String, int> _activeListenersByCode = <String, int>{};
   bool _isDisposed = false;
 
@@ -50,6 +53,24 @@ class InMemoryPartyRoomRepository implements PartyRoomRepository {
   }
 
   @override
+  Stream<List<PartyRoom>> watchPublicRooms() {
+    if (_isDisposed) {
+      return const Stream<List<PartyRoom>>.empty();
+    }
+    return Stream<List<PartyRoom>>.multi((controller) {
+      controller.add(_currentPublicRooms());
+      final subscription = _publicRoomsController.stream.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+      controller.onCancel = () async {
+        await subscription.cancel();
+      };
+    });
+  }
+
+  @override
   PartyRoom? readRoom(String code) => _rooms[code];
 
   @override
@@ -59,6 +80,7 @@ class InMemoryPartyRoomRepository implements PartyRoomRepository {
     }
     _rooms[room.code] = room;
     _controllers[room.code]?.add(room);
+    _publicRoomsController.add(_currentPublicRooms());
   }
 
   @override
@@ -73,6 +95,7 @@ class InMemoryPartyRoomRepository implements PartyRoomRepository {
     final closed = existing.copyWith(closedAt: DateTime.now());
     _rooms[code] = closed;
     _controllers[code]?.add(closed);
+    _publicRoomsController.add(_currentPublicRooms());
   }
 
   int get activeListenerCount =>
@@ -87,8 +110,17 @@ class InMemoryPartyRoomRepository implements PartyRoomRepository {
     _controllers.clear();
     _rooms.clear();
     _activeListenersByCode.clear();
+    await _publicRoomsController.close();
     for (final controller in controllers) {
       await controller.close();
     }
+  }
+
+  List<PartyRoom> _currentPublicRooms() {
+    final rooms = _rooms.values
+        .where((room) => !room.isClosed && room.settings.isPublic)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return List<PartyRoom>.unmodifiable(rooms);
   }
 }

@@ -24,15 +24,12 @@ void main() {
       config: config,
       authService: StaticTokenAuthService(),
       httpClient: MockClient((request) async {
+        expect(request.headers['Authorization'], 'Bearer spotify-access-token');
         expect(request.url.path, '/v1/search');
         expect(request.url.queryParameters['q'], 'Mr Brightside');
         expect(request.url.queryParameters['type'], 'track');
         expect(request.url.queryParameters['limit'], '10');
         expect(request.url.queryParameters['market'], 'from_token');
-        expect(
-          request.headers['Authorization'],
-          'Bearer spotify-access-token',
-        );
         return http.Response(
           jsonEncode(<String, Object>{
             'tracks': <String, Object>{
@@ -42,7 +39,10 @@ void main() {
                   'uri': 'spotify:track:3n3Ppam7vgaVa1iaRUc9Lp',
                   'name': 'Mr. Brightside',
                   'artists': <Map<String, Object>>[
-                    <String, Object>{'name': 'The Killers'},
+                    <String, Object>{
+                      'id': 'artist-killers',
+                      'name': 'The Killers',
+                    },
                   ],
                 },
               ],
@@ -60,9 +60,12 @@ void main() {
     expect(results.single.uri, 'spotify:track:3n3Ppam7vgaVa1iaRUc9Lp');
     expect(results.single.title, 'Mr. Brightside');
     expect(results.single.artist, 'The Killers');
+    expect(results.single.artistRefs, hasLength(1));
+    expect(results.single.artistRefs.single.id, 'artist-killers');
+    expect(results.single.artistRefs.single.name, 'The Killers');
   });
 
-  test('searchTracks filters unplayable and restricted tracks', () async {
+  test('searchTracks filters unplayable and local tracks', () async {
     final service = SpotifyWebCatalogService(
       config: config,
       authService: StaticTokenAuthService(),
@@ -92,7 +95,7 @@ void main() {
                   'id': 'restricted-track',
                   'uri': 'spotify:track:restricted-track',
                   'name': 'Restricted Track',
-                  'restrictions': <String, Object>{'reason': 'market'},
+                  'is_local': true,
                   'artists': <Map<String, Object>>[
                     <String, Object>{'name': 'Artist 3'},
                   ],
@@ -128,41 +131,49 @@ void main() {
     expect(await service.searchTracks('   '), isEmpty);
   });
 
-  test('loadSuggestions returns exactly three resolved Spotify tracks', () async {
-    final queries = <String>[];
-    final service = SpotifyWebCatalogService(
-      config: config,
-      authService: StaticTokenAuthService(),
-      httpClient: MockClient((request) async {
-        queries.add(request.url.queryParameters['q']!);
-        final query = request.url.queryParameters['q']!;
-        return http.Response(
-          jsonEncode(<String, Object>{
-            'tracks': <String, Object>{
-              'items': <Map<String, Object>>[
-                <String, Object>{
-                  'id': 'id-$query',
-                  'uri': 'spotify:track:id-$query',
-                  'name': query,
-                  'artists': <Map<String, Object>>[
-                    <String, Object>{'name': 'Artist $query'},
-                  ],
-                },
-              ],
-            },
-          }),
-          200,
-        );
-      }),
-    );
+  test(
+    'loadSuggestions returns exactly three resolved Spotify tracks',
+    () async {
+      final queries = <String>[];
+      final service = SpotifyWebCatalogService(
+        config: config,
+        authService: StaticTokenAuthService(),
+        httpClient: MockClient((request) async {
+          queries.add(request.url.queryParameters['q']!);
+          final query = request.url.queryParameters['q']!;
+          return http.Response(
+            jsonEncode(<String, Object>{
+              'tracks': <String, Object>{
+                'items': <Map<String, Object>>[
+                  <String, Object>{
+                    'id': 'id-$query',
+                    'uri': 'spotify:track:id-$query',
+                    'name': query,
+                    'artists': <Map<String, Object>>[
+                      <String, Object>{'name': 'Artist $query'},
+                    ],
+                  },
+                ],
+              },
+            }),
+            200,
+          );
+        }),
+      );
 
-    final suggestions = await service.loadSuggestions();
+      final suggestions = await service.loadSuggestions();
 
-    expect(suggestions, hasLength(3));
-    expect(suggestions.every((track) => track.uri != null && track.uri!.isNotEmpty), isTrue);
-    expect(suggestions.map((track) => track.id).toSet().length, 3);
-    expect(queries, hasLength(3));
-  });
+      expect(suggestions, hasLength(3));
+      expect(
+        suggestions.every(
+          (track) => track.uri != null && track.uri!.isNotEmpty,
+        ),
+        isTrue,
+      );
+      expect(suggestions.map((track) => track.id).toSet().length, 3);
+      expect(queries, hasLength(3));
+    },
+  );
 
   test('loadSuggestions skips duplicates and keeps filling to three', () async {
     final service = SpotifyWebCatalogService(
@@ -170,7 +181,8 @@ void main() {
       authService: StaticTokenAuthService(),
       httpClient: MockClient((request) async {
         final query = request.url.queryParameters['q']!;
-        final duplicate = query == 'Mr. Brightside' || query == 'Blinding Lights';
+        final duplicate =
+            query == 'Mr. Brightside' || query == 'Blinding Lights';
         return http.Response(
           jsonEncode(<String, Object>{
             'tracks': <String, Object>{
